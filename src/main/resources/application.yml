@@ -21,13 +21,13 @@ data-go-kr:
 # Spring AI Ollama 설정
 spring.ai.ollama:
   base-url: http://ollama.java21.net
-  chat:
+  ch  at:
     options:
-      model: qwen2.5:latest
+      model: qwen2.5:3b-instruct-q4_K_M
       temperature: 0.0
       # 타임아웃 5분 (300초)
       timeout: 300s
-      max-tokens: 256
+      max-tokens: 128
       top-p: 0.9
       top-k: 40
 

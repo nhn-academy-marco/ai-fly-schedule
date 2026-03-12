@@ -1,0 +1,6 @@
+spring:
+  ai:
+    retry:
+      enabled: false
+    ollama:
+      enabled: false

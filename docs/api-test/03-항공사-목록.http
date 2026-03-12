@@ -1,0 +1,6 @@
+@serviceKey = oqWzAGWsxHR/cre4r5C2TJD0qw9ldrsGzxIAnDQRIvb31Gt6m/EDMUhczdZ5gIFINhj/QBbAVRTnFuTnBMOJyw==
+@baseUrl = https://apis.data.go.kr/1613000/DmstcFlightNvgInfo
+
+### 항공사 목록 조회 (JSON)
+GET {{baseUrl}}/GetAirmanList?serviceKey={{serviceKey}}&_type=json
+Accept: application/json

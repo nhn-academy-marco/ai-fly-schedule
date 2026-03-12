@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>항공 스케줄 MCP 서버</title>
+
+    <!-- Tabler.io CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css" rel="stylesheet"/>
+    <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" rel="stylesheet"/>
+
+    <style>
+        :root {
+            --tblr-font-sans-serif: 'Inter', -apple-system, BlinkMacSystemFont, San Francisco, Segoe UI, Roboto, Helvetica Neue, sans-serif;
+        }
+        body {
+            font-feature-settings: "cv03", "cv04", "cv11";
+        }
+        .hero-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 60px 0;
+            margin-bottom: 40px;
+        }
+        .hero-section h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        .hero-section p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        .feature-card {
+            transition: all 0.3s ease;
+            height: 100%;
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+        .feature-card .card-body {
+            text-align: center;
+            padding: 2rem;
+        }
+        .feature-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+            font-size: 1.5rem;
+        }
+        .endpoint-list {
+            list-style: none;
+            padding: 0;
+        }
+        .endpoint-list li {
+            padding: 12px 16px;
+            margin: 8px 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .endpoint-list code {
+            color: #667eea;
+            font-weight: 600;
+            word-break: break-all;
+        }
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .code-block pre {
+            margin: 0;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        .agent-flow {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .agent-flow div {
+            padding: 8px 0;
+        }
+        .agent-flow strong {
+            color: #667eea;
+        }
+    </style>
+</head>
+<body class="layout-fluid">
+    <div class="page">
+        <!-- Hero Header -->
+        <div class="hero-section">
+            <div class="container-xl">
+                <div class="text-center">
+                    <div class="mb-3">
+                        <i class="ti ti-plane" style="font-size: 4rem;"></i>
+                    </div>
+                    <h1>항공 스케줄 MCP 서버</h1>
+                    <p class="mb-0">MCP & A2A 오케스트레이션 학습 프로젝트</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-wrapper">
+            <div class="page-body">
+                <div class="container-xl">
+                    <!-- API Endpoints Card -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="ti ti-api me-2"></i>
+                                MCP API 엔드포인트
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <!-- 항공편 검색 -->
+                            <div class="mb-4">
+                                <h4 class="mb-3">
+                                    <i class="ti ti-plane me-2 text-primary"></i>
+                                    항공편 검색
+                                </h4>
+                                <ul class="endpoint-list">
+                                    <li>
+                                        <code>GET /api/mcp/flights/search?departure={출발공항}&arrival={도착공항}&date={날짜}</code>
+                                    </li>
+                                    <li>
+                                        <code>GET /api/mcp/flights/search/time?...&afterTime={시간}</code>
+                                    </li>
+                                    <li>
+                                        <code>GET /api/mcp/flights/search/price?...&minPrice={최소가격}&maxPrice={최대가격}</code>
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <!-- 공항 정보 -->
+                            <div class="mb-4">
+                                <h4 class="mb-3">
+                                    <i class="ti ti-building me-2 text-primary"></i>
+                                    공항 정보
+                                </h4>
+                                <ul class="endpoint-list">
+                                    <li><code>GET /api/mcp/airports</code> - 전체 공항 목록</li>
+                                    <li><code>GET /api/mcp/airports/code?airportName={공항명}</code> - 공항 코드 조회</li>
+                                </ul>
+                            </div>
+
+                            <!-- 항공사 정보 -->
+                            <div class="mb-0">
+                                <h4 class="mb-3">
+                                    <i class="ti ti-plane me-2 text-primary"></i>
+                                    항공사 정보
+                                </h4>
+                                <ul class="endpoint-list">
+                                    <li><code>GET /api/mcp/airlines</code> - 전체 항공사 목록</li>
+                                    <li><code>GET /api/mcp/airlines/id?airlineName={항공사명}</code> - 항공사 ID 조회</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Usage Examples Card -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="ti ti-code me-2"></i>
+                                사용 예시
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <h4 class="mb-3">cURL 예제</h4>
+                            <div class="code-block">
+                                <pre># 항공편 검색
+curl "http://localhost:8080/api/mcp/flights/search?departure=광주&arrival=제주&date=내일"
+
+# 오후 2시 이후 출발 항공편 검색
+curl "http://localhost:8080/api/mcp/flights/search/time?departure=광주&arrival=제주&date=내일&afterTime=14:00"
+
+# 가격 범위 필터링
+curl "http://localhost:8080/api/mcp/flights/search/price?departure=광주&arrival=제주&date=내일&minPrice=30000&maxPrice=70000"</pre>
+                            </div>
+
+                            <h4 class="mb-3 mt-4">A2A 에이전트 흐름</h4>
+                            <div class="agent-flow">
+                                <div><i class="ti ti-arrow-down me-2"></i><strong>사용자:</strong> "내일 광주에서 제주로 가는 항공편 알려줘"</div>
+                                <div><i class="ti ti-arrow-down me-2"></i><strong>Coordinator Agent:</strong> 사용자 의도 파악</div>
+                                <div><i class="ti ti-arrow-down me-2"></i><strong>Date Parser Agent:</strong> "내일" → "20260310" 변환</div>
+                                <div><i class="ti ti-arrow-down me-2"></i><strong>Airport Code Agent:</strong> "광주" → "NAARKJJ", "제주" → "NAARKPC"</div>
+                                <div><i class="ti ti-arrow-down me-2"></i><strong>Flight Search Agent:</strong> 공공데이터 API 호출</div>
+                                <div><i class="ti ti-arrow-down me-2"></i><strong>Grouping Agent:</strong> 항공사별 그룹핑</div>
+                                <div><i class="ti ti-arrow-down me-2"></i><strong>Response Formatter Agent:</strong> 자연어로 변환</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Features Grid -->
+                    <div class="row row-cards mb-4">
+                        <div class="col-sm-6 col-lg-4">
+                            <div class="card feature-card">
+                                <div class="card-body">
+                                    <div class="feature-icon">
+                                        <i class="ti ti-message"></i>
+                                    </div>
+                                    <h4 class="card-title">자연어 처리</h4>
+                                    <p class="text-muted">"내일", "모레", "오후 2시" 등 자연어 이해</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-4">
+                            <div class="card feature-card">
+                                <div class="card-body">
+                                    <div class="feature-icon">
+                                        <i class="ti ti-bolt"></i>
+                                    </div>
+                                    <h4 class="card-title">A2A 오케스트레이션</h4>
+                                    <p class="text-muted">다수의 전문화된 에이전트 협업</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-4">
+                            <div class="card feature-card">
+                                <div class="card-body">
+                                    <div class="feature-icon">
+                                        <i class="ti ti-chart-bar"></i>
+                                    </div>
+                                    <h4 class="card-title">항공사별 그룹핑</h4>
+                                    <p class="text-muted">항공사별로 정리된 결과 제공</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-4">
+                            <div class="card feature-card">
+                                <div class="card-body">
+                                    <div class="feature-icon">
+                                        <i class="ti ti-clock"></i>
+                                    </div>
+                                    <h4 class="card-title">시간 필터링</h4>
+                                    <p class="text-muted">원하는 시간대 항공편 검색</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-4">
+                            <div class="card feature-card">
+                                <div class="card-body">
+                                    <div class="feature-icon">
+                                        <i class="ti ti-discount"></i>
+                                    </div>
+                                    <h4 class="card-title">가격 필터링</h4>
+                                    <p class="text-muted">예산에 맞는 항공편 검색</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-4">
+                            <div class="card feature-card">
+                                <div class="card-body">
+                                    <div class="feature-icon">
+                                        <i class="ti ti-world"></i>
+                                    </div>
+                                    <h4 class="card-title">REST API</h4>
+                                    <p class="text-muted">표준 REST API 엔드포인트</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Links Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="ti ti-link me-2"></i>
+                                빠른 링크
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex gap-2">
+                                <a href="/nl-search" class="btn btn-primary">
+                                    <i class="ti ti-magic me-1"></i>
+                                    자연어 검색
+                                </a>
+                                <a href="/mcp-test" class="btn btn-success">
+                                    <i class="ti ti-flask me-1"></i>
+                                    MCP 테스트 도구
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer footer-transparent">
+            <div class="container-xl">
+                <div class="row text-center align-items-center flex-row-reverse">
+                    <div class="col-12">
+                        <div class="text-muted">
+                            Spring AI & MCP & A2A Orchestration Learning Project
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Tabler.io JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/js/tabler.min.js"></script>
+</body>
+</html>

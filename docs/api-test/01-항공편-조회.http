@@ -1,0 +1,64 @@
+### @env dev
+@serviceKey = oqWzAGWsxHR/cre4r5C2TJD0qw9ldrsGzxIAnDQRIvb31Gt6m/EDMUhczdZ5gIFINhj/QBbAVRTnFuTnBMOJyw==
+@baseUrl = https://apis.data.go.kr/1613000/DmstcFlightNvgInfo
+@depPlandTime = 20260310
+
+### 항공편 조회 (GET) - 광주 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKJJ&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###
+
+### 항공편 조회 (GET) - 김포 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKSS&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###
+
+### 항공편 조회 (GET) - 김해 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKJB&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###
+
+### 항공편 조회 (GET) - 대구 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKTN&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###
+
+### 항공편 조회 (GET) - 청주 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKNJ&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###
+
+### 항공편 조회 (GET) - 여수 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKJY&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###
+
+### 항공편 조회 (GET) - 양양 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKNY&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###
+
+### 항공편 조회 (GET) - 울산 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKNU&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###
+
+### 항공편 조회 (GET) - 무안 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKJJ&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###
+
+### 항공편 조회 (GET) - 사천 → 제주
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKPS&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+Accept: application/json
+
+###

@@ -23,13 +23,17 @@ spring.ai.ollama:
   base-url: http://ollama.java21.net
   ch  at:
     options:
-      model: qwen2.5:3b-instruct-q4_K_M
+      model: qwen2.5:1.5b
       temperature: 0.0
       # 타임아웃 5분 (300초)
       timeout: 300s
       max-tokens: 128
+      num-thread: 4
+      num-ctx: 2048
       top-p: 0.9
       top-k: 40
+      keep-alive: 10m
+
 
 # Spring AI Google GenAI 설정 (Gemini)
 spring.ai.google:

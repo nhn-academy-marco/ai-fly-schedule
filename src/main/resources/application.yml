@@ -21,7 +21,7 @@ data-go-kr:
 # Spring AI Ollama 설정
 spring.ai.ollama:
   base-url: http://ollama.java21.net
-  ch  at:
+  chat:
     options:
       model: qwen2.5:1.5b
       temperature: 0.0
@@ -41,7 +41,7 @@ spring.ai.google:
     api-key: AIzaSyA6XO9NuGKguis8ckJ17FnteAKfqiT_XA0
     chat:
       options:
-        model: gemini-2.5-flash
+        model: gemini-2.0-flash
         temperature: 0.0
         max-output-tokens: 256
         top-p: 0.9

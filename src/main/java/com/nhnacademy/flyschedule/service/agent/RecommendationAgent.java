@@ -1,6 +1,7 @@
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import com.nhnacademy.flyschedule.dto.response.FlightInfoResponse;
+import com.nhnacademy.flyschedule.service.ai.PromptTemplateService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -73,17 +74,16 @@ public class RecommendationAgent {
         FlightInfoResponse mostExpensive = priceFilterAgent.findMostExpensive(flights);
         double avgPrice = priceFilterAgent.calculateAveragePrice(flights);
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("가격 분석 결과:\n");
-        sb.append(String.format("- 최저가: %s (%,d원)\n",
-                cheapest.getFlightId(), cheapest.getEconomyCharge()));
-        sb.append(String.format("- 최고가: %s (%,d원)\n",
-                mostExpensive.getFlightId(), mostExpensive.getEconomyCharge()));
-        sb.append(String.format("- 평균가: %,.0f원\n", avgPrice));
-        sb.append(String.format("\n추천: %s편이 가장 저렴합니다.",
-                cheapest.getFlightId()));
+        String sb = "가격 분석 결과:\n" +
+                String.format("- 최저가: %s (%,d원)\n",
+                        cheapest.getFlightId(), cheapest.getEconomyCharge()) +
+                String.format("- 최고가: %s (%,d원)\n",
+                        mostExpensive.getFlightId(), mostExpensive.getEconomyCharge()) +
+                String.format("- 평균가: %,.0f원\n", avgPrice) +
+                String.format("\n추천: %s편이 가장 저렴합니다.",
+                        cheapest.getFlightId());
 
-        return sb.toString();
+        return sb;
     }
 
     /**

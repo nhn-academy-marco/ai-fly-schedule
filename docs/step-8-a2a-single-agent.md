@@ -1,9 +1,9 @@
 # Step 8: A2A 개념과 단일 에이전트 구현
 
-##  학습 목표
-이 단계에서는 **A2A (Agent-to-Agent)** 오케스트레이션 패턴을 이해하고 전문화된 단일 에이전트를 구현합니다.
+## 학습 목표
+이 단계에서는 **A2A (Agent-to-Agent)**오케스트레이션 패턴을 이해하고 전문화된 단일 에이전트를 구현합니다.
 
-** 학습 완료 후 할 수 있는 것:**
+**학습 완료 후 할 수 있는 것:**
 - A2A 패턴과 MCP Tool의 차이 이해
 - 전문화된 단일 에이전트 구현
 - 에이전트 간 통신 구현
@@ -11,24 +11,24 @@
 
 ---
 
-##  A2A (Agent-to-Agent)란?
+## A2A (Agent-to-Agent)란?
 
 ### Agent의 기본 개념
 
-**Agent** 는 자율적으로 행동하고 목표를 달성하기 위해 환경과 상호작용하는 소프트웨어 개체입니다.
+**Agent**는 자율적으로 행동하고 목표를 달성하기 위해 환경과 상호작용하는 소프트웨어 개체입니다.
 
 **Agent의 핵심 특징:**
 
 | 특징 | 설명 | 예시 |
 |------|------|------|
-| ** 자율성 (Autonomy)** | 스스로 결정하고 행동 | DateParser가 날짜를 스스로 파싱 |
-| ** 반응성 (Reactivity)** | 환경 변화에 즉시 대응 | 공항 코드 요청 시 즉시 변환 |
-| ** 능동성 (Proactivity)** | 목표 달성을 위해 주도적 행동 | 필요한 데이터를 스스로 조회 |
-| ** 사회성 (Social Ability)** | 다른 Agent와 협력 | Coordinator와 통신하며 작업 수행 |
+| **자율성 (Autonomy)**| 스스로 결정하고 행동 | DateParser가 날짜를 스스로 파싱 |
+| **반응성 (Reactivity)**| 환경 변화에 즉시 대응 | 공항 코드 요청 시 즉시 변환 |
+| **능동성 (Proactivity)**| 목표 달성을 위해 주도적 행동 | 필요한 데이터를 스스로 조회 |
+| **사회성 (Social Ability)**| 다른 Agent와 협력 | Coordinator와 통신하며 작업 수행 |
 
 ### A2A 정의
 
-**A2A (Agent-to-Agent)** 는 여러 ** 전문화된 에이전트** 가 협력하여 복잡한 작업을 해결하는 패턴입니다.
+**A2A (Agent-to-Agent)**는 여러 **전문화된 에이전트**가 협력하여 복잡한 작업을 해결하는 패턴입니다.
 
 ### A2A의 기술적 배경
 
@@ -69,11 +69,11 @@
 
 | 항목 | Monolithic | Microservices | A2A |
 |------|-----------|---------------|-----|
-| ** 단위** | 하나의 큰 서비스 | 독립된 서비스 | 전문화된 Agent |
-| ** 통신** | 함수 호출 | HTTP/RPC | 메서드 호출 |
-| ** 배포** | 전체 재배포 | 독립 배포 | 같은 앱 내 |
-| ** 목적** | 단순함 | 확장성 | 지능적 협업 |
-| ** 복잡도** | 낮음 | 높음 | 중간 |
+| **단위**| 하나의 큰 서비스 | 독립된 서비스 | 전문화된 Agent |
+| **통신**| 함수 호출 | HTTP/RPC | 메서드 호출 |
+| **배포**| 전체 재배포 | 독립 배포 | 같은 앱 내 |
+| **목적**| 단순함 | 확장성 | 지능적 협업 |
+| **복잡도**| 낮음 | 높음 | 중간 |
 
 **A2A의 독특한 가치:**
 
@@ -99,25 +99,25 @@
 
 | 항목 | MCP Tool | A2A Agent |
 |------|----------|-----------|
-| ** 호출자** | LLM이 직접 호출 | Coordinator가 호출 |
-| ** 제어권** | LLM이 가짐 | Coordinator가 가짐 |
-| ** 복잡도** | 단일 기능 | 복합 기능 |
-| ** 통신 방식** | LLM → Tool | Agent → Agent |
-| ** 용도** | 간단한 함수 호출 | 복잡한 작업 흐름 |
+| **호출자**| LLM이 직접 호출 | Coordinator가 호출 |
+| **제어권**| LLM이 가짐 | Coordinator가 가짐 |
+| **복잡도**| 단일 기능 | 복합 기능 |
+| **통신 방식**| LLM → Tool | Agent → Agent |
+| **용도**| 간단한 함수 호출 | 복잡한 작업 흐름 |
 
 ### A2A의 장점
 
 | 장점 | 설명 | 예시 |
 |------|------|------|
-| ** 전문화** | 각 에이전트가 특정 역할에 집중 | DateParser는 날짜만 처리 |
-| ** 재사용성** | 에이전트를 다른 컨텍스트에서 재사용 | DateParser는 다른 Service에서도 활용 |
-| ** 테스트 용이성** | 각 에이전트를 독립적으로 테스트 | DateParser 단위 테스트 |
-| ** 확장성** | 새로운 에이전트를 쉽게 추가 | PriceFilterAgent 추가 |
-| ** 디버깅** | 문제가 발생한 에이전트를 쉽게 찾음 | 파싱 실패 시 DateParser 확인 |
+| **전문화**| 각 에이전트가 특정 역할에 집중 | DateParser는 날짜만 처리 |
+| **재사용성**| 에이전트를 다른 컨텍스트에서 재사용 | DateParser는 다른 Service에서도 활용 |
+| **테스트 용이성**| 각 에이전트를 독립적으로 테스트 | DateParser 단위 테스트 |
+| **확장성**| 새로운 에이전트를 쉽게 추가 | PriceFilterAgent 추가 |
+| **디버깅**| 문제가 발생한 에이전트를 쉽게 찾음 | 파싱 실패 시 DateParser 확인 |
 
 ---
 
-##  Step 8-1: A2A 에이전트 구조
+## Step 8-1: A2A 에이전트 구조
 
 ### 에이전트 계층 구조
 
@@ -141,14 +141,14 @@
 
 ---
 
-##  Step 8-2: DateParserAgent 구현
+## Step 8-2: DateParserAgent 구현
 
 ### 역할
 
 사용자의 자연어 날짜 표현을 API 요청 형식으로 변환합니다.
 
 ```java
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -253,11 +253,11 @@ Spring을 이미 공부하신 분이라면 "Service와 무엇이 다르지?"라�
 
 | 항목 | 일반적인 Service | A2A Agent |
 |------|-----------------|-----------|
-| ** 어노테이션** | `@Service` | `@Service` (동일!) |
-| ** 역할** | 비즈니스 로직 처리 | 특정 도메인 전문 처리 |
-| ** 책임** | 여러 기능을 포함 가능 | 단일 책임 (SRP) |
-| ** 사용 예** | UserService, OrderService | DateParserAgent, AirportCodeAgent |
-| ** 호출 방식** | Controller → Service | Coordinator → Agent |
+| **어노테이션**| `@Service` | `@Service` (동일!) |
+| **역할**| 비즈니스 로직 처리 | 특정 도메인 전문 처리 |
+| **책임**| 여러 기능을 포함 가능 | 단일 책임 (SRP) |
+| **사용 예**| UserService, OrderService | DateParserAgent, AirportCodeAgent |
+| **호출 방식**| Controller → Service | Coordinator → Agent |
 
 **결론: A2A Agent는 특정 도메인에 특화된 Spring Service입니다!**
 
@@ -274,14 +274,14 @@ dateParser.parseDate("20260310");   // "20260310" (이미 형식 맞음)
 
 ---
 
-##  Step 8-3: AirportCodeAgent 구현
+## Step 8-3: AirportCodeAgent 구현
 
 ### 역할
 
 공항 이름을 공항 코드로 변환합니다.
 
 ```java
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -384,15 +384,15 @@ airportAgent.isValidAirport("화성");    // false
 
 ---
 
-##  Step 8-4: 에이전트 테스트
+## Step 8-4: 에이전트 테스트
 
 ### AgentTestController.java
 
 ```java
 package com.nhnacademy.flyschedule.controller;
 
-import com.nhnacademy.flyschedule.service.AirportCodeAgent;
-import com.nhnacademy.flyschedule.service.DateParserAgent;
+import com.nhnacademy.flyschedule.service.agent.AirportCodeAgent;
+import com.nhnacademy.flyschedule.service.agent.DateParserAgent;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -482,7 +482,7 @@ curl "http://localhost:8080/api/agent/chain?departure=광주&arrival=제주&date
 
 ---
 
-##  Step 8-5: 에이전트 간 통신 패턴
+## Step 8-5: 에이전트 간 통신 패턴
 
 ### 패턴 1: 순차적 통신 (Sequential)
 
@@ -510,17 +510,17 @@ AirportCode (arr) → "NAARKPC" ─┘
 
 ---
 
-##  Step 8-6: 단일 책임 원칙 적용
+## Step 8-6: 단일 책임 원칙 적용
 
 ### 원칙
 
-각 에이전트는 ** 하나의 명확한 책임** 만 가져야 합니다.
+각 에이전트는 **하나의 명확한 책임**만 가져야 합니다.
 
 | 에이전트 | 단일 책임 | 하지 않는 것 |
 |---------|-----------|-------------|
-| **DateParserAgent** | 날짜 파싱 | 공항 코드 변환, API 호출 |
-| **AirportCodeAgent** | 공항 코드 매핑 | 날짜 파싱, 항공편 검색 |
-| **FlightSearchAgent** | 항공편 검색 | 날짜 파싱, 공항 코드 변환 |
+| **DateParserAgent**| 날짜 파싱 | 공항 코드 변환, API 호출 |
+| **AirportCodeAgent**| 공항 코드 매핑 | 날짜 파싱, 항공편 검색 |
+| **FlightSearchAgent**| 항공편 검색 | 날짜 파싱, 공항 코드 변환 |
 
 ### 잘못된 예시: 복합 에이전트
 
@@ -567,19 +567,19 @@ public class FlightSearchAgent {
 
 ---
 
-##  A2A vs 단일 Service 비교
+## A2A vs 단일 Service 비교
 
 | 항목 | A2A (에이전트) | 단일 Service |
 |------|----------------|--------------|
-| ** 코드 재사용성** | 높음 (각 에이전트를 독립적으로 사용) | 낮음 (Service에 결합) |
-| ** 테스트 용이성** | 높음 (각 에이전트를 단위 테스트) | 낮음 (통합 테스트만 가능) |
-| ** 확장성** | 높음 (새로운 에이전트를 쉽게 추가) | 낮음 (Service를 수정해야 함) |
-| ** 복잡도** | 높음 (에이전트 간 통신 관리) | 낮음 (단일 Service) |
-| ** 적합한 경우** | 복잡한 비즈니스 로직 | 단순한 CRUD |
+| **코드 재사용성**| 높음 (각 에이전트를 독립적으로 사용) | 낮음 (Service에 결합) |
+| **테스트 용이성**| 높음 (각 에이전트를 단위 테스트) | 낮음 (통합 테스트만 가능) |
+| **확장성**| 높음 (새로운 에이전트를 쉽게 추가) | 낮음 (Service를 수정해야 함) |
+| **복잡도**| 높음 (에이전트 간 통신 관리) | 낮음 (단일 Service) |
+| **적합한 경우**| 복잡한 비즈니스 로직 | 단순한 CRUD |
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] `DateParserAgent`가 구현됨
 - [ ] `AirportCodeAgent`가 구현됨
@@ -589,13 +589,13 @@ public class FlightSearchAgent {
 
 ---
 
-##  다음 단계
+## 다음 단계
 
-**Step 9: Coordinator 패턴과 에이전트 통신** 에서 여러 에이전트를 조율하는 Coordinator를 구현합니다.
+**Step 9: Coordinator 패턴과 에이전트 통신**에서 여러 에이전트를 조율하는 Coordinator를 구현합니다.
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [Agent-oriented Programming](https://en.wikipedia.org/wiki/Agent-oriented_programming)
 - [Multi-agent Systems](https://en.wikipedia.org/wiki/Multi-agent_system)

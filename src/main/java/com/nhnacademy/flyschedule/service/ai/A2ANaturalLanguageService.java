@@ -1,6 +1,7 @@
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nhnacademy.flyschedule.service.orchestration.NaturalLanguageOrchestrationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -127,7 +128,7 @@ public class A2ANaturalLanguageService {
                     }
 
                     log.info("OrchestrationService 데이터 조회 성공: {}개 항공사",
-                            ((Map<?, ?>)orchResult.getData()).size());
+                            orchResult.getData().size());
                 } else {
                     log.warn("OrchestrationService 데이터 조회 실패");
                     result.put("success", false);

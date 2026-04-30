@@ -1,7 +1,7 @@
 package com.nhnacademy.flyschedule.controller;
 
-import com.nhnacademy.flyschedule.service.A2ANaturalLanguageService;
-import com.nhnacademy.flyschedule.service.NaturalLanguageOrchestrationService;
+import com.nhnacademy.flyschedule.service.ai.A2ANaturalLanguageService;
+import com.nhnacademy.flyschedule.service.orchestration.NaturalLanguageOrchestrationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;

@@ -1,6 +1,8 @@
 package com.nhnacademy.flyschedule.integration;
 
 import com.nhnacademy.flyschedule.service.*;
+import com.nhnacademy.flyschedule.service.agent.AirportCodeAgent;
+import com.nhnacademy.flyschedule.service.agent.DateParserAgent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

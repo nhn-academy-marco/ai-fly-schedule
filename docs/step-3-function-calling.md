@@ -1,18 +1,18 @@
 # Step 3: Function Calling 기초
 
-##  학습 목표
-이 단계에서는 Spring AI의 **Function Calling** 기능을 사용하여 LLM이 자바 메서드를 호출할 수 있게 만듭니다.
+## 학습 목표
+이 단계에서는 Spring AI의 **Function Calling**기능을 사용하여 LLM이 자바 메서드를 호출할 수 있게 만듭니다.
 
-** 학습 완료 후 할 수 있는 것:**
+**학습 완료 후 할 수 있는 것:**
 - `@Tool`, `@ToolParam` annotation 사용
 - 첫 번째 Function Call 구현
 - LLM이 자동으로 Tool을 선택하고 호출하는 과정 이해
 
 ---
 
-##  Function Calling이란?
+## Function Calling이란?
 
-**Function Calling** 은 LLM이 ** 자연어 질문을 분석하여 적절한 자바 메서드를 자동으로 호출** 하는 기술입니다.
+**Function Calling**은 LLM이 **자연어 질문을 분석하여 적절한 자바 메서드를 자동으로 호출**하는 기술입니다.
 
 ### Function Calling의 기술적 배경
 
@@ -42,9 +42,9 @@
 
 LLM은 사용자 입력을 분석하여 다음을 결정합니다:
 
-- ** 의도 파악**: 사용자가 무엇을 원하는가?
-- ** 함수 선택**: 어떤 함수를 호출해야 하는가?
-- ** 파라미터 추출**: 함수에 전달할 값들은 무엇인가?
+- **의도 파악**: 사용자가 무엇을 원하는가?
+- **함수 선택**: 어떤 함수를 호출해야 하는가?
+- **파라미터 추출**: 함수에 전달할 값들은 무엇인가?
 
 예시: "내일 광주에서 제주로 가는 항공편 알려줘"
 ```
@@ -83,11 +83,11 @@ LLM 응답: "네, 내일 광주에서 제주로 가는 항공편은 아시아나
 
 | 항목 | 전통적인 방식 | Function Calling |
 |------|--------------|------------------|
-| ** 자연어 처리** | 정규표현식, if-else | LLM이 자동 처리 |
-| ** 파라미터 추출** | 수동 파싱 로직 | LLM이 자동 추출 |
-| ** 확장성** | 새로운 케이스마다 코드 추가 | Tool만 추가하면 자동 |
-| ** 유지보수** | 복잡한 분기 로직 관리 | 선언적 Tool 정의 |
-| ** 정확도** | 엄격한 규칙만 처리 | 유연한 자연어 이해 |
+| **자연어 처리**| 정규표현식, if-else | LLM이 자동 처리 |
+| **파라미터 추출**| 수동 파싱 로직 | LLM이 자동 추출 |
+| **확장성**| 새로운 케이스마다 코드 추가 | Tool만 추가하면 자동 |
+| **유지보수**| 복잡한 분기 로직 관리 | 선언적 Tool 정의 |
+| **정확도**| 엄격한 규칙만 처리 | 유연한 자연어 이해 |
 
 ### Function Calling이 적합한 경우
 
@@ -140,14 +140,14 @@ LLM 응답: "네, 내일 광주에서 제주로 가는 항공편은 아시아나
 
 | 장점 | 설명 |
 |------|------|
-| ** 자연어 인터페이스** | 사용자가 복잡한 API 몰라도 됨 |
-| ** 자동 파라미터 추출** | LLM이 자연어에서 파라미터를 자동 추출 |
-| ** 유연한 Tool 선택** | LLM이 상황에 맞는 Tool을 자동 선택 |
-| ** 확장성** | 새로운 Tool 추가가 쉬움 |
+| **자연어 인터페이스**| 사용자가 복잡한 API 몰라도 됨 |
+| **자동 파라미터 추출**| LLM이 자연어에서 파라미터를 자동 추출 |
+| **유연한 Tool 선택**| LLM이 상황에 맞는 Tool을 자동 선택 |
+| **확장성**| 새로운 Tool 추가가 쉬움 |
 
 ---
 
-##  Step 3-1: @Tool Annotation
+## Step 3-1: @Tool Annotation
 
 Spring AI 1.1.2의 공식 `@Tool` annotation을 사용하여 LLM이 호출할 수 있는 메서드를 정의합니다.
 
@@ -218,9 +218,9 @@ public class CalculatorTool { ... }
 public int add(...) { ... }
 ```
 
-- ** 역할**: LLM이 이 메서드를 호출할 수 있게 함
-- ** description**: LLM에게 이 함수가 무엇을 하는지 설명
-- ** 중요**: description을 잘 작성해야 LLM이 적절한 함수를 선택!
+- **역할**: LLM이 이 메서드를 호출할 수 있게 함
+- **description**: LLM에게 이 함수가 무엇을 하는지 설명
+- **중요**: description을 잘 작성해야 LLM이 적절한 함수를 선택!
 
 **3. @ToolParam**
 
@@ -228,9 +228,9 @@ public int add(...) { ... }
 @ToolParam(description = "첫 번째 숫자") int a
 ```
 
-- ** 역할**: 파라미터에 대한 설명
-- ** 필요성**: LLM이 자연어에서 숫자를 추출할 때 참조
-- ** 예시**: "3 더하기 5" → LLM이 `{"a": 3, "b": 5}`로 변환
+- **역할**: 파라미터에 대한 설명
+- **필요성**: LLM이 자연어에서 숫자를 추출할 때 참조
+- **예시**: "3 더하기 5" → LLM이 `{"a": 3, "b": 5}`로 변환
 
 ### LLM의 함수 호출 과정 (상세)
 
@@ -331,7 +331,7 @@ LLM의 이해: "아, 더하기는 add() 함수를 호출하면 되는구나!"
 
 ---
 
-##  Step 3-2: Tool 등록 방법
+## Step 3-2: Tool 등록 방법
 
 ### 방법 1: ChatClient.Builder에 등록 (권장)
 
@@ -387,7 +387,7 @@ public class ChatClientConfig {
 
 ---
 
-##  Step 3-3: Function Calling 테스트
+## Step 3-3: Function Calling 테스트
 
 ### FunctionCallTestService.java
 
@@ -449,7 +449,7 @@ public class FunctionCallTestController {
 
 ---
 
-##  Step 3-4: 실행 및 테스트
+## Step 3-4: 실행 및 테스트
 
 ### 1. 애플리케이션 실행
 
@@ -463,7 +463,7 @@ mvn spring-boot:run
 curl "http://localhost:8080/api/test/function-calling?message=10과20의합은얼마야?"
 ```
 
-** 예상 응답:**
+**예상 응답:**
 ```
 10과 20의 합은 30입니다.
 ```
@@ -474,14 +474,14 @@ curl "http://localhost:8080/api/test/function-calling?message=10과20의합은�
 curl "http://localhost:8080/api/test/function-calling?message=5와7을곱해줘"
 ```
 
-** 예상 응답:**
+**예상 응답:**
 ```
 5와 7을 곱하면 35입니다.
 ```
 
 ---
 
-##  Step 3-5: Function Calling 실행 과정
+## Step 3-5: Function Calling 실행 과정
 
 ### 콘솔 로그 분석
 
@@ -518,7 +518,7 @@ DEBUG o.s.a.c.m.OllamaChatModel        : Final response: 10과 20의 합은 30�
 
 ---
 
-##  Step 3-6: 복잡한 Tool 구현
+## Step 3-6: 복잡한 Tool 구현
 
 ### 날짜 계산 Tool
 
@@ -558,23 +558,23 @@ public class DateTimeTool {
 curl "http://localhost:8080/api/test/function-calling?message=내일날짜알려줘"
 ```
 
-** 응답:**
+**응답:**
 ```
 내일은 2026-03-10입니다.
 ```
 
 ---
 
-##  Tool Description 가이드
+## Tool Description 가이드
 
 ### 좋은 Description의 조건
 
 | 조건 | 설명 | 나쁜 예시 | 좋은 예시 |
 |------|------|----------|----------|
-| ** 명확성** | 무엇을 하는지 명확히 설명 | "계산함" | "두 숫자의 합을 계산합니다" |
-| ** 파라미터 설명** | 각 파라미터의 역할 설명 | "숫자" | "첫 번째 숫자 (정수)" |
-| ** 반환값 설명** | 무엇을 반환하는지 설명 | (없음) | "계산된 합계 (정수)를 반환합니다" |
-| ** 사용 예시** | 언제 사용하는지 예시 | (없음) | "덧셈이 필요할 때 사용합니다" |
+| **명확성**| 무엇을 하는지 명확히 설명 | "계산함" | "두 숫자의 합을 계산합니다" |
+| **파라미터 설명**| 각 파라미터의 역할 설명 | "숫자" | "첫 번째 숫자 (정수)" |
+| **반환값 설명**| 무엇을 반환하는지 설명 | (없음) | "계산된 합계 (정수)를 반환합니다" |
+| **사용 예시**| 언제 사용하는지 예시 | (없음) | "덧셈이 필요할 때 사용합니다" |
 
 ### Description 예시
 
@@ -607,42 +607,42 @@ public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
 
 ---
 
-##  일반적인 문제 해결
+## 일반적인 문제 해결
 
 ### 문제 1: LLM이 Tool을 호출하지 않음
 
-** 증상:** Tool을 등록했는데 LLM이 직접 답변만 함
+**증상:**Tool을 등록했는데 LLM이 직접 답변만 함
 
-** 원인:** Description이 불명확하여 LLM이 Tool 사용을 인지하지 못함
+**원인:**Description이 불명확하여 LLM이 Tool 사용을 인지하지 못함
 
-** 해결 방법:**
+**해결 방법:**
 1. `@Tool`의 `description`을 더 명확하게 작성
 2. 파라미터의 `@ToolParam(description)` 상세화
 3. LLM 모델 변경 (Ollama → Gemini)
 
 ### 문제 2: 파라미터 추출 실패
 
-** 증상:** `null` 또는 잘못된 파라미터가 전달됨
+**증상:**`null` 또는 잘못된 파라미터가 전달됨
 
-** 원인:** LLM이 파라미터를 제대로 추출하지 못함
+**원인:**LLM이 파라미터를 제대로 추출하지 못함
 
-** 해결 방법:**
+**해결 방법:**
 1. `@ToolParam`의 `description`에 예시 추가
 2. 파라미터 타입 명확히 (String → int 등)
 3. Temperature 낮추기 (0.0 ~ 0.3)
 
 ### 문제 3: 여러 Tool 중 원하지 않는 Tool이 호출됨
 
-** 증상:** 다른 Tool이 호출됨
+**증상:**다른 Tool이 호출됨
 
-** 해결 방법:**
+**해결 방법:**
 1. 각 Tool의 `description`을 더 구체적으로
 2. Tool 이름을 명확하게 (`search` → `searchFlightsByAirline`)
 3. `required = false`로 선택적 파라미터 구분
 
 ---
 
-##  Function Calling 패턴
+## Function Calling 패턴
 
 ### 패턴 1: 단일 Tool
 
@@ -656,7 +656,7 @@ public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
 사용자 → LLM → Tool1 → 결과1 → LLM → Tool2 → 결과2 → 응답
 ```
 
-** 예시:** "내일 광주에서 제주 항공편 중 가장 저렴한 거"
+**예시:**"내일 광주에서 제주 항공편 중 가장 저렴한 거"
 
 1. `parseDate("내일")` → "2026-03-10"
 2. `searchFlightsByAirline("광주", "제주", "2026-03-10")` → 항공편 목록
@@ -670,7 +670,7 @@ public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
                 → Tool2 ─┘
 ```
 
-** 예시:** "서울과 부산 날씨 알려줘"
+**예시:**"서울과 부산 날씨 알려줘"
 
 1. `getWeather("서울")` (병렬)
 2. `getWeather("부산")` (병렬)
@@ -678,7 +678,7 @@ public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] `CalculatorTool.java`가 생성됨
 - [ ] `@Tool`, `@ToolParam` annotation 사용됨
@@ -690,13 +690,13 @@ public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
 
 ---
 
-##  다음 단계
+## 다음 단계
 
-**Step 4: Tool Callback과 실행 과정 이해** 에서 Function Calling의 실행 과정을 디버깅하는 방법을 학습합니다.
+**Step 4: Tool Callback과 실행 과정 이해**에서 Function Calling의 실행 과정을 디버깅하는 방법을 학습합니다.
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [Spring AI Function Calling 공식 문서](https://docs.spring.io/spring-ai/reference/api/functioncalling.html)
 - [@Tool Annotation API](https://docs.spring.io/spring-ai/reference/api/functioncalling.html#_tool_annotation)
@@ -704,20 +704,20 @@ public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
 
 ---
 
-##  심화 학습
+## 심화 학습
 
 ### 왜 @Tool을 사용하나요?
 
-1. ** 표준화된 방식**: Spring AI 1.1.2의 공식 annotation
-2. ** 타입 안전성**: 컴파일 타임에 체크
-3. ** 자동 등록**: `@Component`와 함께 자동으로 빈 등록
+1. **표준화된 방식**: Spring AI 1.1.2의 공식 annotation
+2. **타입 안전성**: 컴파일 타임에 체크
+3. **자동 등록**: `@Component`와 함께 자동으로 빈 등록
 4. **LLM 호환성**: OpenAI, Gemini, Ollama 등 모두 지원
 
 ### Function Calling vs 일반 API 호출
 
 | 항목 | Function Calling | 일반 API |
 |------|------------------|----------|
-| ** 인터페이스** | 자연어 | HTTP 요청 |
-| ** 파라미터 추출** | LLM이 자동 추출 | 수동 파싱 |
-| ** 에러 처리** | LLM이 재시도 | 수동 처리 |
-| ** 유연성** | 높음 (LLM이 상황 판단) | 낮음 (고정 로직) |
+| **인터페이스**| 자연어 | HTTP 요청 |
+| **파라미터 추출**| LLM이 자동 추출 | 수동 파싱 |
+| **에러 처리**| LLM이 재시도 | 수동 처리 |
+| **유연성**| 높음 (LLM이 상황 판단) | 낮음 (고정 로직) |

@@ -1,25 +1,25 @@
-# Step 9: Coordinator 패턴과 에이전트 통신
+# Step 9: Multi-Agent Orchestration 패턴
 
-##  학습 목표
-이 단계에서는 여러 전문 에이전트를 ** 조율하는 Coordinator** 를 구현하고 에이전트 간 통신 패턴을 학습합니다.
+## 학습 목표
+이 단계에서는 여러 전문 에이전트를 **조율하는 Orchestrator**를 구현하고 에이전트 간 통신 패턴을 학습합니다.
 
-** 학습 완료 후 할 수 있는 것:**
-- Coordinator 패턴 구현
+**학습 완료 후 할 수 있는 것:**
+- Multi-Agent Orchestration 패턴 구현
 - 에이전트 간 통신 구현
 - 작업 흐름 제어
 - 에러 처리 및 재시도
 
 ---
 
-##  Coordinator 패턴이란?
+## Multi-Agent Orchestration 패턴이란?
 
-### Coordinator 정의
+### Orchestrator 정의
 
-**Coordinator** 는 여러 에이전트를 ** 조율(Orchestrate)** 하고 작업 흐름을 제어하는 중앙 관리자입니다.
+**Orchestrator**는 여러 에이전트를 **조율(Orchestrate)**하고 작업 흐름을 제어하는 중앙 관리자입니다.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Coordinator                                                │
+│  Orchestrator                                               │
 │  - 작업 계획 수립                                           │
 │  - 에이전트 간 통신 관리                                    │
 │  - 결과 통합                                                │
@@ -32,28 +32,29 @@
     └────────┘  └────────┘  └────────┘  └────────┘
 ```
 
-### Coordinator의 책임
+### Orchestrator의 책임
 
 | 책임 | 설명 | 예시 |
 |------|------|------|
-| ** 작업 분해** | 복잡한 작업을 작은 단위로 분해 | "광주-제주 항공편" → 3개의 하위 작업 |
-| ** 에이전트 선택** | 적절한 에이전트 선택 및 호출 | 날짜 파싱 필요 → DateParserAgent |
-| ** 데이터 전달** | 에이전트 간 데이터 전달 | DateParser 결과 → AirportCode |
-| ** 결과 통합** | 각 에이전트의 결과를 통합 | 항공사별 그룹핑 |
-| ** 에러 처리** | 실패 시 재시도 또는fallback | 파싱 실패 → 기본값 사용 |
+| **작업 분해**| 복잡한 작업을 작은 단위로 분해 | "광주-제주 항공편" → 3개의 하위 작업 |
+| **에이전트 선택**| 적절한 에이전트 선택 및 호출 | 날짜 파싱 필요 → DateParserAgent |
+| **데이터 전달**| 에이전트 간 데이터 전달 | DateParser 결과 → AirportCode |
+| **결과 통합**| 각 에이전트의 결과를 통합 | 항공사별 그룹핑 |
+| **에러 처리**| 실패 시 재시도 또는fallback | 파싱 실패 → 기본값 사용 |
 
 ---
 
-##  Step 9-1: FlightSearchAgent 구현
+## Step 9-1: FlightSearchAgent 구현
 
 ### 역할
 
 항공편 검색을 담당하며 다른 에이전트를 활용하여 파라미터를 준비합니다.
 
 ```java
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import com.nhnacademy.flyschedule.dto.response.FlightInfoResponse;
+import com.nhnacademy.flyschedule.service.api.ApiClientService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -65,16 +66,16 @@ import java.util.stream.Collectors;
 /**
  * 항공편 검색 A2A 에이전트
  *
- * DateParser, AirportCode 에이전트와 협력하여 항공편을 검색합니다.
+ * DateParserAgent, AirportCodeAgent 에이전트와 협력하여 항공편을 검색합니다.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class FlightSearchAgent {
 
-    private final DateParserAgent dateParser;
-    private final AirportCodeAgent airportCodeAgent;
     private final ApiClientService apiClientService;
+    private final DateParserAgent dateParserAgent;
+    private final AirportCodeAgent airportCodeAgent;
     private final GroupingAgent groupingAgent;
 
     /**
@@ -120,14 +121,14 @@ public class FlightSearchAgent {
 
 ---
 
-##  Step 9-2: GroupingAgent 구현
+## Step 9-2: GroupingAgent 구현
 
 ### 역할
 
 항공편을 항공사별로 그룹핑합니다.
 
 ```java
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import com.nhnacademy.flyschedule.dto.response.FlightInfoResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -190,14 +191,15 @@ public class GroupingAgent {
 
 ---
 
-##  Step 9-3: Coordinator 구현
+## Step 9-3: MultiAgentOrchestrator 구현
 
-### FlightCoordinator 구현
+### MultiAgentOrchestrator 구현
 
 ```java
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.orchestration;
 
 import com.nhnacademy.flyschedule.dto.response.FlightInfoResponse;
+import com.nhnacademy.flyschedule.service.agent.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -206,17 +208,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 항공편 검색 Coordinator
+ * 멀티 에이전트 오케스트레이터
  *
- * 여러 에이전트를 조율하여 항공편 검색 작업을 수행합니다.
+ * 여러 에이전트를 조율하여 항공편 검색 및 추천 작업을 수행합니다.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class FlightCoordinator {
+public class MultiAgentOrchestrator {
 
-    private final DateParserAgent dateParser;
-    private final AirportCodeAgent airportCodeAgent;
     private final FlightSearchAgent flightSearchAgent;
     private final TimeFilterAgent timeFilterAgent;
     private final PriceFilterAgent priceFilterAgent;
@@ -228,7 +228,7 @@ public class FlightCoordinator {
             String departure, String arrival, String date) {
 
         log.info("========================================");
-        log.info("FlightCoordinator: 기본 검색 조율 시작");
+        log.info("MultiAgentOrchestrator: 기본 검색 조율 시작");
         log.info("========================================");
 
         // FlightSearchAgent에 위임 (내부적으로 다른 에이전트 활용)
@@ -236,7 +236,7 @@ public class FlightCoordinator {
                 departure, arrival, date);
 
         log.info("========================================");
-        log.info("FlightCoordinator: 기본 검색 조율 완료");
+        log.info("MultiAgentOrchestrator: 기본 검색 조율 완료");
         log.info("========================================");
 
         return result;
@@ -249,7 +249,7 @@ public class FlightCoordinator {
             String departure, String arrival, String date, String afterTime) {
 
         log.info("========================================");
-        log.info("FlightCoordinator: 시간 필터 검색 조율 시작");
+        log.info("MultiAgentOrchestrator: 시간 필터 검색 조율 시작");
         log.info("시간 조건: {} 이후", afterTime);
         log.info("========================================");
 
@@ -259,11 +259,11 @@ public class FlightCoordinator {
 
         // 단계 2: 시간 필터링
         log.info("시간 필터링 적용");
-        Map<String, List<FlightInfoResponse>> filtered = timeFilterAgent.filterByTime(
-                allFlights, afterTime);
+        Map<String, List<FlightInfoResponse>> filtered = flightSearchAgent.searchWithTimeFilter(
+                departure, arrival, date, afterTime);
 
         log.info("========================================");
-        log.info("FlightCoordinator: 시간 필터 검색 조율 완료");
+        log.info("MultiAgentOrchestrator: 시간 필터 검색 조율 완료");
         log.info("========================================");
 
         return filtered;
@@ -276,7 +276,7 @@ public class FlightCoordinator {
             String departure, String arrival, String date, Integer minPrice, Integer maxPrice) {
 
         log.info("========================================");
-        log.info("FlightCoordinator: 가격 필터 검색 조율 시작");
+        log.info("MultiAgentOrchestrator: 가격 필터 검색 조율 시작");
         log.info("가격 조건: {} ~ {}원", minPrice, maxPrice);
         log.info("========================================");
 
@@ -286,11 +286,11 @@ public class FlightCoordinator {
 
         // 단계 2: 가격 필터링
         log.info("가격 필터링 적용");
-        Map<String, List<FlightInfoResponse>> filtered = priceFilterAgent.filterByPrice(
-                allFlights, minPrice, maxPrice);
+        Map<String, List<FlightInfoResponse>> filtered = flightSearchAgent.searchWithPriceFilter(
+                departure, arrival, date, minPrice, maxPrice);
 
         log.info("========================================");
-        log.info("FlightCoordinator: 가격 필터 검색 조율 완료");
+        log.info("MultiAgentOrchestrator: 가격 필터 검색 조율 완료");
         log.info("========================================");
 
         return filtered;
@@ -300,23 +300,25 @@ public class FlightCoordinator {
 
 ---
 
-##  Step 9-4: Coordinator 테스트
+## Step 9-4: Coordinator 테스트
 
 ### CoordinatorTestController.java
 
 ```java
 package com.nhnacademy.flyschedule.controller;
 
-import com.nhnacademy.flyschedule.service.FlightCoordinator;
+import com.nhnacademy.flyschedule.service.orchestration.MultiAgentOrchestrator;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/coordinator")
 public class CoordinatorTestController {
 
-    private final FlightCoordinator coordinator;
+    private final MultiAgentOrchestrator coordinator;
 
-    public CoordinatorTestController(FlightCoordinator coordinator) {
+    public CoordinatorTestController(MultiAgentOrchestrator coordinator) {
         this.coordinator = coordinator;
     }
 
@@ -405,7 +407,7 @@ curl "http://localhost:8080/api/coordinator/search/price?departure=광주&arriva
 
 ---
 
-##  Step 9-5: 에러 처리 및 재시도
+## Step 9-5: 에러 처리 및 재시도
 
 ### 패턴 1: 예외 전파
 
@@ -450,7 +452,7 @@ public Map<String, List<FlightInfoResponse>> coordinateBasicSearchWithRetry(
 
             // 대기 후 재시도
             try {
-                Thread.sleep(1000 * retryCount);  // 점진적 지연
+                Thread.sleep(1000L * retryCount);  // 점진적 지연
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("재시도 중단", ie);
@@ -489,28 +491,28 @@ private Map<String, List<FlightInfoResponse>> getCachedFlights(
 
 ---
 
-##  Step 9-6: Coordinator 패턴의 장단점
+## Step 9-6: Coordinator 패턴의 장단점
 
 ### 장점
 
 | 장점 | 설명 | 예시 |
 |------|------|------|
-| ** 중앙 집중식 제어** | 작업 흐름을 한 곳에서 관리 | Coordinator에서 전체 흐름 확인 가능 |
-| ** 재사용성** | 여러 곳에서 Coordinator 활용 | 다른 컨트롤러에서도 사용 가능 |
-| ** 테스트 용이성** | Coordinator만 테스트하면 됨 | 각 에이전트는 Mock으로 대체 |
-| ** 유연성** | 에이전트 교체가 쉬움 | DateParser → NewDateParser로 교체 |
+| **중앙 집중식 제어**| 작업 흐름을 한 곳에서 관리 | Coordinator에서 전체 흐름 확인 가능 |
+| **재사용성**| 여러 곳에서 Coordinator 활용 | 다른 컨트롤러에서도 사용 가능 |
+| **테스트 용이성**| Coordinator만 테스트하면 됨 | 각 에이전트는 Mock으로 대체 |
+| **유연성**| 에이전트 교체가 쉬움 | DateParser → NewDateParser로 교체 |
 
 ### 단점
 
 | 단점 | 설명 | 해결 방법 |
 |------|------|----------|
-| ** 복잡도 증가** | 중간 계층이 추가됨 | 간단한 경우는 직접 호출 |
-| ** 병목 가능성** | 모든 호출이 Coordinator를 거침 | 비동기 처리로 해결 |
-| ** 단일 실패점** | Coordinator 실패 시 전체 실패 | 재시도, Fallback 추가 |
+| **복잡도 증가**| 중간 계층이 추가됨 | 간단한 경우는 직접 호출 |
+| **병목 가능성**| 모든 호출이 Coordinator를 거침 | 비동기 처리로 해결 |
+| **단일 실패점**| Coordinator 실패 시 전체 실패 | 재시도, Fallback 추가 |
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] `FlightCoordinator`가 구현됨
 - [ ] 에이전트 간 통신이 동작함
@@ -521,13 +523,13 @@ private Map<String, List<FlightInfoResponse>> getCachedFlights(
 
 ---
 
-##  다음 단계
+## 다음 단계
 
-**Step 10: 복합 A2A 시스템과 자연어 검색** 에서 완전한 자연어 검색 시스템을 구현합니다.
+**Step 10: 복합 A2A 시스템과 자연어 검색**에서 완전한 자연어 검색 시스템을 구현합니다.
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [Mediator Pattern](https://en.wikipedia.org/wiki/Mediator_pattern)
 - [Orchestration vs Choreography](https://martinfowler.com/bliki/Orchestration.html)

@@ -1,4 +1,4 @@
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,8 +38,8 @@ public class AirportCodeAgent {
         AIRPORT_CODE_MAP.put("광주공항", "NAARKJJ");
         AIRPORT_CODE_MAP.put("여수", "NAARKJY");
         AIRPORT_CODE_MAP.put("여수공항", "NAARKJY");
-        AIRPORT_CODE_MAP.put("무안", "NAARKJJ");
-        AIRPORT_CODE_MAP.put("무안공항", "NAARKJJ");
+        AIRPORT_CODE_MAP.put("무안", "NAARKJB");
+        AIRPORT_CODE_MAP.put("무안공항", "NAARKJB");
 
         // 영남권
         AIRPORT_CODE_MAP.put("대구", "NAARKTN");

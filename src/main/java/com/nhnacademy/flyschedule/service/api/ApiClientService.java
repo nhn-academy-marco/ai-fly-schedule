@@ -1,4 +1,4 @@
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.api;
 
 import com.nhnacademy.flyschedule.config.DataGoKrApiProperties;
 import com.nhnacademy.flyschedule.dto.response.AirlineInfoResponse;

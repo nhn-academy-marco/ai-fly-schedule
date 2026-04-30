@@ -1,7 +1,7 @@
 package com.nhnacademy.flyschedule.mcp;
 
 import com.nhnacademy.flyschedule.dto.response.AirportInfoResponse;
-import com.nhnacademy.flyschedule.service.AirportListAgent;
+import com.nhnacademy.flyschedule.service.agent.AirportListAgent;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import lombok.RequiredArgsConstructor;

@@ -1,9 +1,9 @@
 # Step 7: 공항/항공사 정보 Tool 구현
 
-##  학습 목표
-이 단계에서는 공항 정보와 항공사 정보를 조회하는 **MCP Tool** 을 구현합니다.
+## 학습 목표
+이 단계에서는 공항 정보와 항공사 정보를 조회하는 **MCP Tool**을 구현합니다.
 
-** 학습 완료 후 할 수 있는 것:**
+**학습 완료 후 할 수 있는 것:**
 - 공항 목록 조회 Tool 구현
 - 공항 코드 조회 Tool 구현
 - 항공사 목록 조회 Tool 구현
@@ -11,9 +11,9 @@
 
 ---
 
-##  캐싱(Caching)이란?
+## 캐싱(Caching)이란?
 
-**캐싱** 은 자주 사용되는 데이터를 ** 메모리에 저장** 하여 반복적인 데이터베이스 또는 API 호출을 줄이는 기술입니다.
+**캐싱**은 자주 사용되는 데이터를 **메모리에 저장**하여 반복적인 데이터베이스 또는 API 호출을 줄이는 기술입니다.
 
 ### 캐싱의 필요성
 
@@ -47,10 +47,10 @@
 
 | 전략 | 설명 | 장점 | 단점 | 사용 사례 |
 |------|------|------|------|-----------|
-| ** 로컬 캐시** | 애플리케이션 메모리에 저장 | 빠름 | 분산 환경에서 중복 | 공항 코드, 항공사 ID |
-| ** 분산 캐시** | Redis 등 별도 서버 | 일관성 | 복잡도 증가 | 세션, 대용량 데이터 |
-| ** HTTP 캐시** | 브라우저/CDN 캐시 | 서버 부하 감소 | 제어 어려움 | 정적 리소스 |
-| ** 데이터베이스 캐시** | DB 내부 캐시 | 자동화 | 제한적 | 쿼리 결과 |
+| **로컬 캐시**| 애플리케이션 메모리에 저장 | 빠름 | 분산 환경에서 중복 | 공항 코드, 항공사 ID |
+| **분산 캐시**| Redis 등 별도 서버 | 일관성 | 복잡도 증가 | 세션, 대용량 데이터 |
+| **HTTP 캐시**| 브라우저/CDN 캐시 | 서버 부하 감소 | 제어 어려움 | 정적 리소스 |
+| **데이터베이스 캐시**| DB 내부 캐시 | 자동화 | 제한적 | 쿼리 결과 |
 
 ### 로컬 캐시 구현 방식
 
@@ -100,10 +100,10 @@ public String getAirportCode(String name) {
 
 | 고려사항 | 설명 | 예시 |
 |---------|------|------|
-| ** 만료 정책** | 언제 캐시를 삭제할까? | 10분, 1시간, 하루 |
-| ** 크기 제한** | 얼마나 저장할까? | 1000개, 10000개 |
-| ** 갱신 전략** | 어떻게 업데이트할까? | TTL, LRU, LFU |
-| ** 일관성** | 데이터 변경 시 어떻게? | 즉시 무효화, 주기적 갱신 |
+| **만료 정책**| 언제 캐시를 삭제할까? | 10분, 1시간, 하루 |
+| **크기 제한**| 얼마나 저장할까? | 1000개, 10000개 |
+| **갱신 전략**| 어떻게 업데이트할까? | TTL, LRU, LFU |
+| **일관성**| 데이터 변경 시 어떻게? | 즉시 무효화, 주기적 갱신 |
 
 ### 이 프로젝트의 캐싱 전략
 
@@ -128,7 +128,7 @@ public String getAirportCode(String name) {
 
 ---
 
-##  공항/항공사 정보 API 소개
+## 공항/항공사 정보 API 소개
 
 ### 공공데이터 포털 엔드포인트
 
@@ -139,7 +139,7 @@ public String getAirportCode(String name) {
 
 ---
 
-##  Step 7-1: DTO 정의
+## Step 7-1: DTO 정의
 
 ### AirportInfoResponse.java
 
@@ -199,7 +199,7 @@ public class AirlineInfoResponse {
 
 ---
 
-##  Step 7-2: ApiClientService 확장
+## Step 7-2: ApiClientService 확장
 
 ### ApiClientService에 메서드 추가
 
@@ -277,7 +277,7 @@ public List<AirlineInfoResponse> getAirlineList() {
 
 ---
 
-##  Step 7-3: AirportInfoTool 구현
+## Step 7-3: AirportInfoTool 구현
 
 ### AirportInfoTool.java
 
@@ -365,7 +365,7 @@ public class AirportInfoTool {
 
 ---
 
-##  Step 7-4: AirlineInfoTool 구현
+## Step 7-4: AirlineInfoTool 구현
 
 ### AirlineInfoTool.java
 
@@ -453,7 +453,7 @@ public class AirlineInfoTool {
 
 ---
 
-##  Step 7-5: ChatClient에 Tool 등록
+## Step 7-5: ChatClient에 Tool 등록
 
 ### ChatClientConfig 업데이트
 
@@ -481,7 +481,7 @@ public class ChatClientConfig {
 
 ---
 
-##  Step 7-6: 테스트
+## Step 7-6: 테스트
 
 ### InfoToolController.java
 
@@ -600,15 +600,15 @@ curl "http://localhost:8080/api/chat/gemini?question=아시아나항공코드알
 
 ---
 
-##  Step 7-7: 캐싱 전략
+## Step 7-7: 캐싱 전략
 
 ### 왜 캐싱이 필요한가?
 
 | 이유 | 설명 |
 |------|------|
-| ** 성능** | 매번 API 호출하지 않음 |
-| ** 비용 절감** | API 호출 횟수 감소 |
-| ** 응답 속도** | 메모리에서 바로 반환 |
+| **성능**| 매번 API 호출하지 않음 |
+| **비용 절감**| API 호출 횟수 감소 |
+| **응답 속도**| 메모리에서 바로 반환 |
 
 ### 캐싱 구현 패턴
 
@@ -653,13 +653,13 @@ public class CachedAirportInfoTool {
 
 ---
 
-##  일반적인 문제 해결
+## 일반적인 문제 해결
 
 ### 문제 1: 공항명이 정확히 일치하지 않음
 
-** 증상:** "광주공항" vs "광주"로 인해 조회 실패
+**증상:**"광주공항" vs "광주"로 인해 조회 실패
 
-** 해결 방법:**
+**해결 방법:**
 1. 공백 제거
 2. 동의어 처리
 3. 퍼지 매칭
@@ -674,14 +674,14 @@ private String normalizeAirportName(String name) {
 
 ### 문제 2: 캐시로 인해 최신 정보 반영 안 됨
 
-** 해결 방법:**
+**해결 방법:**
 1. 주기적 캐시 초기화
 2. 수동 캐시 초기화 엔드포인트 제공
 3. 캐시 만료 시간 단축
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] `AirportInfoTool`이 구현됨
 - [ ] `AirlineInfoTool`이 구현됨
@@ -694,13 +694,13 @@ private String normalizeAirportName(String name) {
 
 ---
 
-##  다음 단계
+## 다음 단계
 
-**Step 8: A2A 개념과 단일 에이전트 구현** 에서 A2A 오케스트레이션 패턴을 학습하고 전문화된 에이전트를 구현합니다.
+**Step 8: A2A 개념과 단일 에이전트 구현**에서 A2A 오케스트레이션 패턴을 학습하고 전문화된 에이전트를 구현합니다.
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [공공데이터포털 공항 목록 API](https://www.data.go.kr/data/15068628/openapi.do)
 - [공공데이터포털 항공사 목록 API](https://www.data.go.kr/data/15068629/openapi.do)

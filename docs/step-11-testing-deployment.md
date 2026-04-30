@@ -1,9 +1,9 @@
 # Step 11: 테스트와 배포
 
-##  학습 목표
-이 단계에서는 Spring AI 애플리케이션을 ** 테스트** 하고 ** 배포** 하는 방법을 학습합니다.
+## 학습 목표
+이 단계에서는 Spring AI 애플리케이션을 **테스트**하고 **배포**하는 방법을 학습합니다.
 
-** 학습 완료 후 할 수 있는 것:**
+**학습 완료 후 할 수 있는 것:**
 - Spring AI 단위 테스트 작성
 - 통합 테스트 구현
 - LLM 호출 Mock 처리
@@ -11,7 +11,7 @@
 
 ---
 
-##  테스트 전략
+## 테스트 전략
 
 ### 테스트 피라미드
 
@@ -33,12 +33,12 @@
 
 ---
 
-##  Step 11-1: 단위 테스트
+## Step 11-1: 단위 테스트
 
 ### DateParserAgent 테스트
 
 ```java
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -85,7 +85,7 @@ class DateParserAgentTest {
 ### AirportCodeAgent 테스트
 
 ```java
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -129,7 +129,7 @@ class AirportCodeAgentTest {
 
 ---
 
-##  Step 11-2: Spring AI 통합 테스트
+## Step 11-2: Spring AI 통합 테스트
 
 ### ChatClient 테스트 (Mock 사용)
 
@@ -237,7 +237,7 @@ class NaturalLanguageOrchestrationServiceTest {
 
 ---
 
-##  Step 11-3: REST API 테스트
+## Step 11-3: REST API 테스트
 
 ### MockMvc 테스트
 
@@ -300,16 +300,16 @@ class NaturalLanguageSearchControllerTest {
 
 ---
 
-##  Step 11-4: LLM 호출 Mock 전략
+## Step 11-4: LLM 호출 Mock 전략
 
 ### 왜 Mock이 필요한가?
 
 | 이유 | 설명 |
 |------|------|
-| ** 비용 절감** | 실제 LLM API 호출 비용 절감 |
-| ** 속도** | LLM 호출은 느림 (초~분 단위) |
-| ** 일관성** | 항상 같은 응답 보장 |
-| ** 오프라인** | 인터넷 없이 테스트 가능 |
+| **비용 절감**| 실제 LLM API 호출 비용 절감 |
+| **속도**| LLM 호출은 느림 (초~분 단위) |
+| **일관성**| 항상 같은 응답 보장 |
+| **오프라인**| 인터넷 없이 테스트 가능 |
 
 ### MockChatModel 구현
 
@@ -442,7 +442,7 @@ docker-compose up -d
 
 ---
 
-##  Step 11-6: 모니터링과 로깅
+## Step 11-6: 모니터링과 로깅
 
 ### Actuator 설정
 
@@ -472,7 +472,7 @@ management:
 curl http://localhost:8080/actuator/health
 ```
 
-** 응답:**
+**응답:**
 ```json
 {
   "status": "UP",
@@ -486,7 +486,7 @@ curl http://localhost:8080/actuator/health
 
 ---
 
-##  Step 11-7: 배포 전 체크리스트
+## Step 11-7: 배포 전 체크리스트
 
 ### 코드 품질
 
@@ -519,7 +519,7 @@ curl http://localhost:8080/actuator/health
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] 단위 테스트 작성 완료
 - [ ] 통합 테스트 작성 완료
@@ -531,7 +531,7 @@ curl http://localhost:8080/actuator/health
 
 ---
 
-## 🎉 축하합니다!
+##  축하합니다!
 
 4주간의 Spring AI & A2A 오케스트레이션 학습을 완료하셨습니다!
 
@@ -554,27 +554,27 @@ curl http://localhost:8080/actuator/health
    - Coordinator 패턴
    - 에이전트 간 통신
 
-5. ** 자연어 검색 시스템**
+5. **자연어 검색 시스템**
    - LLM 파라미터 추출
    - A2A + LLM 통합
 
-6. ** 테스트와 배포**
+6. **테스트와 배포**
    - 단위 테스트, 통합 테스트
    - Docker 배포
 
 ---
 
-##  추가 학습 주제
+## 추가 학습 주제
 
-1. **LangChain4j** - Java용 LLM 프레임워크
-2. **Vector Database** - RAG 구현
-3. **Prompt Engineering** - 프롬프트 최적화
-4. **Multi-Agent Systems** - 더 복잡한 에이전트 시스템
-5. **Observability** - LLM 애플리케이션 모니터링
+1. **LangChain4j**- Java용 LLM 프레임워크
+2. **Vector Database**- RAG 구현
+3. **Prompt Engineering**- 프롬프트 최적화
+4. **Multi-Agent Systems**- 더 복잡한 에이전트 시스템
+5. **Observability**- LLM 애플리케이션 모니터링
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [Spring AI 공식 문서](https://docs.spring.io/spring-ai/reference/)
 - [Testing Spring Boot](https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.testing)

@@ -1,17 +1,17 @@
 # Step 10: 복합 A2A 시스템과 자연어 검색
 
-##  학습 목표
+## 학습 목표
 
-##  데모 사이트
+## 데모 사이트
 
 실제 동작하는 데모 사이트에서 체험해보세요!
 
 **[https://fly.java21.net](https://fly.java21.net)**
 
 ---
-이 단계에서는 **LLM과 A2A를 통합** 한 완전한 자연어 검색 시스템을 구현합니다.
+이 단계에서는 **LLM과 A2A를 통합**한 완전한 자연어 검색 시스템을 구현합니다.
 
-** 학습 완료 후 할 수 있는 것:**
+**학습 완료 후 할 수 있는 것:**
 - LLM을 통한 파라미터 추출
 - A2A 오케스트레이션과 LLM 통합
 - 자연어 검색 시스템 구현
@@ -19,7 +19,7 @@
 
 ---
 
-##  시스템 아키텍처
+## 시스템 아키텍처
 
 ### LLM + A2A 통합 아키텍처
 
@@ -38,7 +38,7 @@
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  NaturalLanguageOrchestrationService (Coordinator)          │
+│  MultiAgentOrchestrator (Orchestrator)                      │
 │  - LLM 결과 수신                                            │
 │  - 에이전트 조율                                           │
 └─────────────────────────────────────────────────────────────┘
@@ -65,20 +65,18 @@
 
 ---
 
-##  Step 10-1: LLM 파라미터 추출 서비스
+## Step 10-1: LLM 파라미터 추출 서비스
 
 ### LlmAnalysisService.java
 
 ```java
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.ai;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -154,14 +152,16 @@ public class LlmAnalysisService {
 
 ---
 
-##  Step 10-2: 자연어 오케스트레이션 서비스
+## Step 10-2: 자연어 오케스트레이션 서비스
 
 ### NaturalLanguageOrchestrationService.java
 
 ```java
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.orchestration;
 
 import com.nhnacademy.flyschedule.dto.response.FlightInfoResponse;
+import com.nhnacademy.flyschedule.service.agent.*;
+import com.nhnacademy.flyschedule.service.ai.LlmAnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -361,15 +361,17 @@ public class NaturalLanguageOrchestrationService {
 
 ---
 
-##  Step 10-3: 자연어 검색 컨트롤러
+## Step 10-3: 자연어 검색 컨트롤러
 
 ### NaturalLanguageSearchController.java
 
 ```java
 package com.nhnacademy.flyschedule.controller;
 
-import com.nhnacademy.flyschedule.service.NaturalLanguageOrchestrationService;
+import com.nhnacademy.flyschedule.service.orchestration.NaturalLanguageOrchestrationService;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/nl-search")
@@ -408,7 +410,7 @@ public class NaturalLanguageSearchController {
 
 ---
 
-##  Step 10-4: 테스트
+## Step 10-4: 테스트
 
 ### 테스트 시나리오
 
@@ -436,28 +438,28 @@ curl -X POST http://localhost:8080/api/nl-search/search \
 
 ---
 
-##  Step 10-5: LLM과 A2A의 역할 분담
+## Step 10-5: LLM과 A2A의 역할 분담
 
 ### LLM의 역할
 
 | 역할 | 설명 | 예시 |
 |------|------|------|
-| ** 파라미터 추출** | 자연어에서 정보 추출 | "광주" → departure: "광주" |
-| ** 의도 파악** | 사용자의 의도 이해 | "알려줘" → 검색 요청 |
-| ** 응답 생성** | 결과를 자연어로 변환 | JSON → "네, 항공편은..." |
+| **파라미터 추출**| 자연어에서 정보 추출 | "광주" → departure: "광주" |
+| **의도 파악**| 사용자의 의도 이해 | "알려줘" → 검색 요청 |
+| **응답 생성**| 결과를 자연어로 변환 | JSON → "네, 항공편은..." |
 
 ### A2A의 역할
 
 | 역할 | 설명 | 예시 |
 |------|------|------|
-| ** 데이터 변환** | 파라미터 포맷 변환 | "내일" → "20260310" |
-| **API 호출** | 외부 시스템 연동 | 공공데이터 API 호출 |
-| ** 필터링** | 조건에 맞는 데이터 추출 | 시간/가격 필터링 |
-| ** 그룹핑** | 데이터 정리 | 항공사별 그룹핑 |
+| **데이터 변환**| 파라미터 포맷 변환 | "내일" → "20260310" |
+| **API 호출**| 외부 시스템 연동 | 공공데이터 API 호출 |
+| **필터링**| 조건에 맞는 데이터 추출 | 시간/가격 필터링 |
+| **그룹핑**| 데이터 정리 | 항공사별 그룹핑 |
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] `LlmAnalysisService`가 구현됨
 - [ ] `NaturalLanguageOrchestrationService`가 구현됨
@@ -468,13 +470,13 @@ curl -X POST http://localhost:8080/api/nl-search/search \
 
 ---
 
-##  다음 단계
+## 다음 단계
 
-**Step 11: 테스트와 배포** 에서 Spring AI 애플리케이션을 테스트하고 배포하는 방법을 학습합니다.
+**Step 11: 테스트와 배포**에서 Spring AI 애플리케이션을 테스트하고 배포하는 방법을 학습합니다.
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [Spring AI Testing Guide](https://docs.spring.io/spring-ai/reference/testing.html)
 - [LLM Integration Patterns](https://martinfowler.com/articles/llm-Integration-patterns.html)

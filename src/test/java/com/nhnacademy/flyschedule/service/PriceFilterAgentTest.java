@@ -1,6 +1,7 @@
 package com.nhnacademy.flyschedule.service;
 
 import com.nhnacademy.flyschedule.dto.response.FlightInfoResponse;
+import com.nhnacademy.flyschedule.service.agent.PriceFilterAgent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,4 +1,4 @@
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import com.nhnacademy.flyschedule.dto.response.FlightInfoResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -48,11 +48,7 @@ public class PriceFilterAgent {
                     }
 
                     // 최대 가격 필터
-                    if (maxPrice != null && price > maxPrice) {
-                        return false;
-                    }
-
-                    return true;
+                    return maxPrice == null || price <= maxPrice;
                 })
                 .collect(Collectors.toList());
     }

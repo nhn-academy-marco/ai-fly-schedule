@@ -1,9 +1,9 @@
 # Step 4: Tool Callback과 실행 과정 이해
 
-##  학습 목표
-이 단계에서는 **Tool Calling Callback** 을 사용하여 Function Calling의 실행 과정을 모니터링하고 디버깅하는 방법을 학습합니다.
+## 학습 목표
+이 단계에서는 **Tool Calling Callback**을 사용하여 Function Calling의 실행 과정을 모니터링하고 디버깅하는 방법을 학습합니다.
 
-** 학습 완료 후 할 수 있는 것:**
+**학습 완료 후 할 수 있는 것:**
 - `ToolCallingCallback` 구현
 - Function Calling 실행 과정 로깅
 - LLM의 Tool 선택 과정 이해
@@ -11,18 +11,18 @@
 
 ---
 
-##  Tool Calling Callback이란?
+## Tool Calling Callback이란?
 
-**Tool Calling Callback** 은 Function Calling의 ** 모든 단계** 를 가로채서 로깅, 모니터링, 수정할 수 있는 인터페이스입니다.
+**Tool Calling Callback**은 Function Calling의 **모든 단계**를 가로채서 로깅, 모니터링, 수정할 수 있는 인터페이스입니다.
 
 ### Callback이 필요한 이유
 
 | 이유 | 설명 | 예시 |
 |------|------|------|
-| ** 디버깅** | LLM이 어떤 Tool을 선택했는지 확인 | "왜 다른 Tool이 호출되었지?" |
-| ** 성능 모니터링** | 각 Tool의 실행 시간 측정 | "이 Tool이 너무 느려" |
-| ** 보안 로깅** | 어떤 파라미터로 호출되었는지 기록 | "민감 정보가 노출되었나?" |
-| ** 결과 수정** | Tool 실행 결과를 가공 | "응답이 너무 길어서 줄여야겠어" |
+| **디버깅**| LLM이 어떤 Tool을 선택했는지 확인 | "왜 다른 Tool이 호출되었지?" |
+| **성능 모니터링**| 각 Tool의 실행 시간 측정 | "이 Tool이 너무 느려" |
+| **보안 로깅**| 어떤 파라미터로 호출되었는지 기록 | "민감 정보가 노출되었나?" |
+| **결과 수정**| Tool 실행 결과를 가공 | "응답이 너무 길어서 줄여야겠어" |
 
 ### Callback 실행 타이밍
 
@@ -70,7 +70,7 @@
 
 ---
 
-##  Step 4-1: LoggingCallback 구현
+## Step 4-1: LoggingCallback 구현
 
 ### LoggingCallback.java 생성
 
@@ -190,7 +190,7 @@ public class LoggingCallback {
 
 ---
 
-##  Step 4-2: ChatClient에 Callback 등록
+## Step 4-2: ChatClient에 Callback 등록
 
 ### ChatClientConfig 수정
 
@@ -230,7 +230,7 @@ public class ChatClientConfig {
 
 ---
 
-##  Step 4-3: Callback이 포함된 서비스
+## Step 4-3: Callback이 포함된 서비스
 
 ### MonitoredChatService.java
 
@@ -283,7 +283,7 @@ public class MonitoredChatService {
 
 ---
 
-##  Step 4-4: Callback 테스트
+## Step 4-4: Callback 테스트
 
 ### CallbackTestController.java
 
@@ -348,7 +348,7 @@ Tool 이름: searchFlightsByAirline
 
 ---
 
-##  Step 4-5: 성능 모니터링
+## Step 4-5: 성능 모니터링
 
 ### PerformanceMonitor 구현
 
@@ -466,7 +466,7 @@ Tool: searchFlightsByPriceRange
 
 ---
 
-##  Step 4-6: 고급 Callback 패턴
+## Step 4-6: 고급 Callback 패턴
 
 ### 패턴 1: 결과 캐싱
 
@@ -539,22 +539,22 @@ public class ErrorHandlingCallback {
 
 ---
 
-##  일반적인 문제 해결
+## 일반적인 문제 해결
 
 ### 문제 1: Callback이 호출되지 않음
 
-** 증상:** 로그가 출력되지 않음
+**증상:**로그가 출력되지 않음
 
-** 해결 방법:**
+**해결 방법:**
 1. Callback이 `@Component`로 등록되었는지 확인
 2. Service에 Callback이 주입되었는지 확인
 3. 로그 레벨이 DEBUG/INFO인지 확인
 
 ### 문제 2: 성능 저하
 
-** 증상:** Callback 추가 후 응답 시간이 느려짐
+**증상:**Callback 추가 후 응답 시간이 느려짐
 
-** 해결 방법:**
+**해결 방법:**
 1. 불필요한 로깅 제거
 2. 비동기 로깅 사용
 3. 결과 로깅 크기 제한
@@ -569,16 +569,16 @@ public void logAsync(String message) {
 
 ### 문제 3: 메모리 누수
 
-** 증상:** 장기 실행 시 메모리 사용량 증가
+**증상:**장기 실행 시 메모리 사용량 증가
 
-** 해결 방법:**
+**해결 방법:**
 1. `ConcurrentHashMap` 크기 제한
 2. 주기적인 통계 초기화
 3. 오래된 캐시 삭제
 
 ---
 
-##  Callback 활용 시나리오
+## Callback 활용 시나리오
 
 ### 시나리오 1: 개발 환경
 
@@ -598,7 +598,7 @@ public void logAsync(String message) {
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] `LoggingCallback.java`가 생성됨
 - [ ] Callback이 Service에서 사용됨
@@ -609,13 +609,13 @@ public void logAsync(String message) {
 
 ---
 
-##  다음 단계
+## 다음 단계
 
-**Step 5: 다중 Function Calling과 MCP Tool 패턴** 에서 여러 Tool을 효과적으로 관리하는 방법을 학습합니다.
+**Step 5: 다중 Function Calling과 MCP Tool 패턴**에서 여러 Tool을 효과적으로 관리하는 방법을 학습합니다.
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [Spring AI Callback 공식 문서](https://docs.spring.io/spring-ai/reference/api/chatclient.html#_tool_calling_callbacks)
 - [ChatClient.Advisor API](https://docs.spring.io/spring-ai/reference/api/chatclient.html#_advisors)
@@ -623,16 +623,16 @@ public void logAsync(String message) {
 
 ---
 
-##  심화 학습
+## 심화 학습
 
 ### Callback vs Advisor
 
 | 항목 | Callback | Advisor |
 |------|----------|---------|
-| ** 목적** | Tool 실행 과정 모니터링 | 요청/응답 수정 |
-| ** 타이밍** | Tool 호출 전후 | 전체 요청/응답 |
-| ** 사용 예시** | 로깅, 성능 측정 | 캐싱, 재시도, 보안 |
-| ** 적용 범위** | Tool 호출 단계 | 전체 ChatClient |
+| **목적**| Tool 실행 과정 모니터링 | 요청/응답 수정 |
+| **타이밍**| Tool 호출 전후 | 전체 요청/응답 |
+| **사용 예시**| 로깅, 성능 측정 | 캐싱, 재시도, 보안 |
+| **적용 범위**| Tool 호출 단계 | 전체 ChatClient |
 
 ### Callback 체이닝
 

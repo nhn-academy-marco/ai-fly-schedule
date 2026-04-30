@@ -1,10 +1,10 @@
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -17,23 +17,17 @@ import java.util.regex.Pattern;
  * LLM을 활용한 자연어 분석 서비스
  *
  * 사용자의 자연어 메시지에서 항공편 검색 파라미터를 추출합니다.
- * Ollama API에 RestClient를 사용하여 직접 HTTP 요청을 보냅니다.
+ * Spring AI ChatClient를 사용하여 구조화된 데이터를 추출합니다.
  */
 @Slf4j
 @Service
 public class LlmAnalysisService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestClient restClient;
+    private final ChatClient chatClient;
 
-    @Value("${spring.ai.ollama.base-url:http://localhost:11434}")
-    private String baseUrl;
-
-    @Value("${spring.ai.ollama.chat.options.model:qwen2.5:latest}")
-    private String model;
-
-    public LlmAnalysisService() {
-        this.restClient = RestClient.create();
+    public LlmAnalysisService(@Qualifier("ollamaChatClientBuilder") ChatClient.Builder chatClientBuilder) {
+        this.chatClient = chatClientBuilder.build();
     }
 
     /**
@@ -59,29 +53,15 @@ public class LlmAnalysisService {
         String prompt = buildAnalysisPrompt(message);
 
         try {
-            // Ollama API에 직접 요청
-            String url = baseUrl + "/api/generate";
+            // ChatClient를 사용하여 JSON 응답 수신
+            String response = chatClient.prompt()
+                    .user(prompt)
+                    .call()
+                    .content();
 
-            // 요청 바디 구성
-            Map<String, Object> requestBody = Map.of(
-                "model", model,
-                "prompt", prompt,
-                "stream", false,
-                "format", "json"
-            );
-
-            // RestClient로 POST 요청
-            Map<String, Object> response = restClient.post()
-                    .uri(url)
-                    .body(requestBody)
-                    .retrieve()
-                    .body(Map.class);
-
-            if (response != null && response.containsKey("response")) {
-                String jsonResponse = (String) response.get("response");
-                log.info("LLM 분석 결과: {}", jsonResponse);
-
-                return parseResponse(jsonResponse);
+            if (response != null && !response.isBlank()) {
+                log.info("LLM 분석 결과: {}", response);
+                return parseResponse(response);
             } else {
                 throw new RuntimeException("LLM 응답이 비어있습니다.");
             }

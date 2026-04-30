@@ -1,15 +1,15 @@
 # 항공 스케줄 API 프로젝트
 
-**MCP & A2A 오케스트레이션** + **Spring AI 1.1.2** 학습을 위한 Spring Boot 실습 프로젝트
+**MCP & A2A 오케스트레이션**+ **Spring AI 1.1.4**학습을 위한 Spring Boot 실습 프로젝트
 
 ---
 
-##  MCP & A2A란?
+## MCP & A2A란?
 
 ### MCP (Model Context Protocol)
 - AI 모델이 **외부 도구(Tools)**와 **데이터 소스**에 접근하는 표준 프로토콜
 - AI 모델이 검색, 계산, API 호출 등을 할 수 있게 해줌
-- Spring AI의 **@Tool** 어노테이션으로 쉽게 구현 가능
+- Spring AI의 **@Tool**어노테이션으로 쉽게 구현 가능
 
 ### A2A (Agent-to-Agent)
 - 여러 **전문화된 에이전트**가 협력하여 복잡한 작업을 해결하는 패턴
@@ -17,7 +17,7 @@
 
 ---
 
-##  데모 사이트
+## 데모 사이트
 
 실제 동작하는 데모 사이트에서 Spring AI & A2A 오케스트레이션을 체험해보세요!
 
@@ -30,25 +30,25 @@
 
 ---
 
-##  4주 완성 Step별 학습 경로
+## 4주 완성 Step별 학습 경로
 
 이 프로젝트는 **11개의 Step**으로 구성된 단계별 교재입니다.
 
 | 주차 | Step | 주제 | 학습 시간 |
 |------|------|------|----------|
-| **1주차** | Step 1-2 | Spring AI 기초 | 7-9시간 |
-| **2주차** | Step 3-5 | Function Calling & MCP Tool | 13-16시간 |
-| **3주차** | Step 6-8 | 항공편 Tool & A2A 기초 | 13-17시간 |
-| **4주차** | Step 9-11 | A2A 심화 & 배포 | 15-19시간 |
+| **1주차**| Step 1-2 | Spring AI 기초 | 7-9시간 |
+| **2주차**| Step 3-5 | Function Calling & MCP Tool | 13-16시간 |
+| **3주차**| Step 6-8 | 항공편 Tool & A2A 기초 | 13-17시간 |
+| **4주차**| Step 9-11 | A2A 심화 & 배포 | 15-19시간 |
 
 ---
 
-##  Step별 문서
+## Step별 문서
 
 ### Step 1: Spring AI 환경 설정
 **[step-1-spring-ai-settings.md](./step-1-spring-ai-settings.md)**
 
-- Spring AI 1.1.2 의존성 설정
+- Spring AI 1.1.4 의존성 설정
 - Ollama 로컬 LLM 연동
 - Google Gemini API 연동
 - application.yml을 통한 LLM 설정
@@ -68,7 +68,7 @@
 ### Step 3: Function Calling 기초
 **[step-3-function-calling.md](./step-3-function-calling.md)**
 
-- **@Tool**, **@ToolParam** annotation 사용
+- **@Tool**, **@ToolParam**annotation 사용
 - 첫 번째 Function Call 구현
 - LLM이 자바 메서드를 호출하는 과정 이해
 - Tool 등록 방법
@@ -156,7 +156,7 @@
 
 ---
 
-##  학습 목표
+## 학습 목표
 
 이 프로젝트를 통해 다음을 학습할 수 있습니다:
 
@@ -242,7 +242,7 @@
 
 ---
 
-##  API 정보
+## API 정보
 
 | 항목 | 내용 |
 |------|------|
@@ -254,22 +254,22 @@
 
 ---
 
-##  기술 스택
+## 기술 스택
 
 ### 핵심 기술
 - **Java 21**
-- **Spring Boot 3.3** (Spring AI 1.1.2 호환)
+- **Spring Boot 3.3**(Spring AI 1.1.2 호환)
 - **Spring Web MVC**
-- **RestClient** (Spring 6.1+ Modern HTTP Client)
-- **Thymeleaf** (템플릿 엔진)
-- **Lombok** (롬복)
+- **RestClient**(Spring 6.1+ Modern HTTP Client)
+- **Thymeleaf**(템플릿 엔진)
+- **Lombok**(롬복)
 - **Maven**
 
 ### AI/LLM
-- **Ollama** - 로컬/원격 LLM 서버
-- **Qwen 2.5** - 자연어 분석 모델
-- **Gemini 2.5 Flash** - Google GenAI API
-- **Spring AI 1.1.2** - AI 통합 프레임워크
+- **Ollama**- 로컬/원격 LLM 서버
+- **Qwen 2.5**- 자연어 분석 모델
+- **Gemini 2.5 Flash**- Google GenAI API
+- **Spring AI 1.1.2**- AI 통합 프레임워크
 
 ### Spring AI 핵심 기능
 - **@Tool / @ToolParam**: 공식 Spring AI Tool Annotation
@@ -279,21 +279,21 @@
 ### UI
 - **Bootstrap 5.0**
 - **Tabler.io Template**
-- **Fetch API** (비동기 AJAX)
+- **Fetch API**(비동기 AJAX)
 
 ---
 
-##  사전 요구사항
+## 사전 요구사항
 
-1. **Java 21** 설치
-2. **IntelliJ IDEA** (또는 Eclipse)
-3. **Maven** 빌드 도구
-4. **공공데이터 포털 인증키** (무료 발급)
-5. **Google API Key** (Gemini 사용 시, 유료지만 저렴)
+1. **Java 21**설치
+2. **IntelliJ IDEA**(또는 Eclipse)
+3. **Maven**빌드 도구
+4. **공공데이터 포털 인증키**(무료 발급)
+5. **Google API Key**(Gemini 사용 시, 유료지만 저렴)
 
 ---
 
-##  관련 링크
+## 관련 링크
 
 ### 공식 문서
 - [공공데이터포털](https://www.data.go.kr/)
@@ -306,7 +306,7 @@
 
 ---
 
-##  라이선스
+## 라이선스
 
 이 프로젝트는 학습 목적으로 제작되었습니다.
 

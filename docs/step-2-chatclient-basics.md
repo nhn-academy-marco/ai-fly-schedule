@@ -1,9 +1,9 @@
 # Step 2: ChatClient 기초와 LLM 연동
 
-##  학습 목표
-이 단계에서는 Spring AI의 **ChatClient** 를 사용하여 LLM과 대화하는 방법을 학습합니다.
+## 학습 목표
+이 단계에서는 Spring AI의 **ChatClient**를 사용하여 LLM과 대화하는 방법을 학습합니다.
 
-** 학습 완료 후 할 수 있는 것:**
+**학습 완료 후 할 수 있는 것:**
 - ChatClient로 간단한 질문-답변 구현
 - Ollama와 Gemini 모델 선택적으로 사용
 - ChatClient.Builder로 ChatClient 생성
@@ -11,9 +11,9 @@
 
 ---
 
-##  ChatClient란?
+## ChatClient란?
 
-**ChatClient** 는 Spring AI에서 LLM과 대화하기 위한 ** 유창한 API(Fluent API)** 를 제공하는 인터페이스입니다.
+**ChatClient**는 Spring AI에서 LLM과 대화하기 위한 **유창한 API(Fluent API)**를 제공하는 인터페이스입니다.
 
 ### ChatClient의 필요성
 
@@ -95,10 +95,10 @@ ChatClient client2 = builder.defaultSystem("다른 역할").build();
 
 | 특징 | 설명 |
 |------|------|
-| ** 빌더 패턴** | 메서드 체이닝으로 직관적인 코드 작성 |
-| ** 다중 LLM 지원** | Ollama, Gemini, OpenAI 등 다양한 모델 사용 |
-| **Function Calling** | LLM이 자바 메서드를 호출할 수 있게 함 |
-| ** 타입 안전성** | 컴파일 타임에 타입 체크 |
+| **빌더 패턴**| 메서드 체이닝으로 직관적인 코드 작성 |
+| **다중 LLM 지원**| Ollama, Gemini, OpenAI 등 다양한 모델 사용 |
+| **Function Calling**| LLM이 자바 메서드를 호출할 수 있게 함 |
+| **타입 안전성**| 컴파일 타임에 타입 체크 |
 
 ### ChatClient vs ChatModel
 
@@ -124,13 +124,13 @@ ChatClient client2 = builder.defaultSystem("다른 역할").build();
 └─────────────────────────────────────────┘
 ```
 
-** 요약:**
+**요약:**
 - **ChatClient**: LLM과 대화하는 방법을 정의하는 API
 - **ChatModel**: 실제 LLM(Ollama, Gemini 등)과 연결되는 구현체
 
 ---
 
-##  Step 2-1: ChatClientConfig 설정
+## Step 2-1: ChatClientConfig 설정
 
 먼저 두 가지 LLM(Ollama, Gemini)을 선택적으로 사용할 수 있도록 설정 클래스를 만듭니다.
 
@@ -256,7 +256,7 @@ public ChatClient.Builder ollamaChatClientBuilder(...) { ... }
 
 ---
 
-## 💬 Step 2-2: 첫 번째 대화 서비스 구현
+##  Step 2-2: 첫 번째 대화 서비스 구현
 
 ### SimpleChatService.java 생성
 
@@ -398,7 +398,7 @@ ChatClient.prompt()
 
 ---
 
-##  Step 2-3: 테스트 컨트롤러 구현
+## Step 2-3: 테스트 컨트롤러 구현
 
 ### ChatTestController.java 생성
 
@@ -454,7 +454,7 @@ public class ChatTestController {
 
 ---
 
-##  Step 2-4: 실행 및 테스트
+## Step 2-4: 실행 및 테스트
 
 ### 1. 애플리케이션 실행
 
@@ -468,7 +468,7 @@ mvn spring-boot:run
 curl "http://localhost:8080/api/chat/ollama?question=안녕하세요 반갑습니다"
 ```
 
-** 예상 응답:**
+**예상 응답:**
 ```
 [Ollama 응답 (35.2초)]
 안녕하세요! 반갑습니다. 무엇을 도와드릴까요?
@@ -480,7 +480,7 @@ curl "http://localhost:8080/api/chat/ollama?question=안녕하세요 반갑습�
 curl "http://localhost:8080/api/chat/gemini?question=안녕하세요 반갑습니다"
 ```
 
-** 예상 응답:**
+**예상 응답:**
 ```
 [Gemini 응답 (3.5초)]
 안녕하세요! 반갑습니다. 무엇을 도와드릴까요?
@@ -495,7 +495,7 @@ curl "http://localhost:8080/api/chat/gemini?question=안녕하세요 반갑습�
 
 ---
 
-##  Step 2-5: ChatClient 고급 기능
+## Step 2-5: ChatClient 고급 기능
 
 ### 시스템 프롬프트 설정
 
@@ -550,7 +550,7 @@ public FlightSuggestion suggestFlight(String requirement) {
 
 ---
 
-##  Step 2-6: 디버깅과 모니터링
+## Step 2-6: 디버깅과 모니터링
 
 ### 로깅 설정
 
@@ -573,67 +573,67 @@ DEBUG o.s.a.c.m.OllamaChatModel        : Received response in 35234ms
 
 ---
 
-##  일반적인 문제 해결
+## 일반적인 문제 해결
 
 ### 문제 1: No qualifying bean of type ChatClient
 
-** 에러 메시지:**
+**에러 메시지:**
 ```
 No qualifying bean of type 'org.springframework.ai.chat.client.ChatClient'
 ```
 
-** 원인:** `ChatClient` 빈이 생성되지 않음
+**원인:**`ChatClient` 빈이 생성되지 않음
 
-** 해결 방법:**
+**해결 방법:**
 1. `ChatClientConfig.java`에 `@Bean` 메서드가 있는지 확인
 2. `ChatClient.Builder`를 주입받는지 확인
 3. `@ComponentScan`이 설정 패키지를 포함하는지 확인
 
 ### 문제 2: Ollama 연결 실패
 
-** 에러 메시지:**
+**에러 메시지:**
 ```
 Connection refused: ollama.java21.net
 ```
 
-** 해결 방법:**
+**해결 방법:**
 1. Ollama 서버 실행 중인지 확인
 2. `application.yml`의 `base-url` 확인
 3. 로컬 Ollama 사용 시: `http://localhost:11434`
 
 ### 문제 3: Gemini API 키 오류
 
-** 에러 메시지:**
+**에러 메시지:**
 ```
 401 Unauthorized
 ```
 
-** 해결 방법:**
+**해결 방법:**
 1. `GEMINI_API_KEY` 환경 변수 설정 확인
 2. API 키 유효성 확인
 3. 할당량(Quota) 초과 여부 확인
 
 ### 문제 4: 응답 시간이 너무 김
 
-** 해결 방법:**
+**해결 방법:**
 1. Ollama → Gemini로 변경 (속도 향상)
 2. `max-output-tokens` 줄이기
 3. `temperature` 0.0으로 설정 (응답 일관성)
 
 ---
 
-##  Ollama vs Gemini 실제 성능 비교
+## Ollama vs Gemini 실제 성능 비교
 
 | 항목 | Ollama (Qwen 2.5) | Gemini (2.5 Flash) |
 |------|------------------|-------------------|
-| ** 평균 응답 시간** | 30~60초 | 3~5초 |
-| ** 한국어 질문** | "스프링이란?" | "스프링이란?" |
-| ** 응답 품질** | 상세하지만 느림 | 간결하고 빠름 |
-| ** 추천 용도** | 개발, 테스트 | 실시간 서비스 |
+| **평균 응답 시간**| 30~60초 | 3~5초 |
+| **한국어 질문**| "스프링이란?" | "스프링이란?" |
+| **응답 품질**| 상세하지만 느림 | 간결하고 빠름 |
+| **추천 용도**| 개발, 테스트 | 실시간 서비스 |
 
 ---
 
-##  ChatClient 패턴 이해
+## ChatClient 패턴 이해
 
 ### 패턴 1: 빌더 패턴 (Builder Pattern)
 
@@ -658,7 +658,7 @@ chatClient
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] `ChatClientConfig.java`가 생성됨
 - [ ] `SimpleChatService.java`가 생성됨
@@ -670,13 +670,13 @@ chatClient
 
 ---
 
-##  다음 단계
+## 다음 단계
 
-**Step 3: Function Calling 기초** 에서 LLM이 자바 메서드를 호출하는 방법을 학습합니다.
+**Step 3: Function Calling 기초**에서 LLM이 자바 메서드를 호출하는 방법을 학습합니다.
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [Spring AI ChatClient 공식 문서](https://docs.spring.io/spring-ai/reference/api/chatclient.html)
 - [ChatClient.Builder API](https://docs.spring.io/spring-ai/reference/api/chatclient.html#_the_chatclient_builder)
@@ -685,13 +685,13 @@ chatClient
 
 ---
 
-##  심화 학습
+## 심화 학습
 
 ### 왜 ChatClient.Builder를 빈으로 등록하나요?
 
-1. ** 유연성**: 필요할 때마다 새 ChatClient 생성 가능
-2. ** 설정 재사용**: `defaultTools`, `defaultAdvisors`를 한 번만 설정
-3. ** 테스트 용이성**: Mock ChatClient로 쉽게 교체 가능
+1. **유연성**: 필요할 때마다 새 ChatClient 생성 가능
+2. **설정 재사용**: `defaultTools`, `defaultAdvisors`를 한 번만 설정
+3. **테스트 용이성**: Mock ChatClient로 쉽게 교체 가능
 
 ### @Primary 빈의 역할
 

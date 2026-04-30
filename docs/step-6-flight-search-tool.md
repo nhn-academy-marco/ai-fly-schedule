@@ -1,9 +1,9 @@
 # Step 6: 항공편 검색 Tool 구현
 
-##  학습 목표
-이 단계에서는 실제 ** 공공데이터 포털 API** 와 연동하는 항공편 검색 MCP Tool을 구현합니다.
+## 학습 목표
+이 단계에서는 실제 **공공데이터 포털 API**와 연동하는 항공편 검색 MCP Tool을 구현합니다.
 
-** 학습 완료 후 할 수 있는 것:**
+**학습 완료 후 할 수 있는 것:**
 - RestClient로 외부 API 호출
 - 공공데이터 포털 API 연동
 - 항공사별 그룹핁 구현
@@ -11,9 +11,9 @@
 
 ---
 
-##  RestClient란?
+## RestClient란?
 
-Spring Framework 6.1부터 도입된 **RestClient** 는 동기식 HTTP 클라이언트를 위한 ** 현대적인 API** 입니다.
+Spring Framework 6.1부터 도입된 **RestClient**는 동기식 HTTP 클라이언트를 위한 **현대적인 API**입니다.
 
 ### RestClient의 기술적 진화
 
@@ -32,11 +32,11 @@ Spring 6.1+  → RestClient      (동기식, 간결한 API)
 
 | 항목 | RestTemplate | WebClient | RestClient |
 |------|-------------|-----------|------------|
-| ** 출시** | Spring 3.x | Spring 5.x | Spring 6.1 |
-| ** 스타일** | 명령형 | 반응형 | 유창한 API |
-| ** 차단/비차단** | 차단(Blocking) | 비차단(Non-blocking) | 차단(Blocking) |
-| ** 복잡도** | 복잡함 | 중간 | 간결함 |
-| ** 권장 사용** | 레거시 | 비동기 필요 시 | 일반적인 HTTP 호출 |
+| **출시**| Spring 3.x | Spring 5.x | Spring 6.1 |
+| **스타일**| 명령형 | 반응형 | 유창한 API |
+| **차단/비차단**| 차단(Blocking) | 비차단(Non-blocking) | 차단(Blocking) |
+| **복잡도**| 복잡함 | 중간 | 간결함 |
+| **권장 사용**| 레거시 | 비동기 필요 시 | 일반적인 HTTP 호출 |
 
 ### RestClient의 장점
 
@@ -83,23 +83,23 @@ RestClient restClient = RestClient.builder()
 
 | 시나리오 | 적합한 클라이언트 | 이유 |
 |---------|------------------|------|
-| ** 일반적인 API 호출** | RestClient | 간결하고 직관적 |
-| ** 대량의 병렬 요청** | WebClient | Non-blocking I/O |
-| ** 레거시 코드** | RestTemplate | 이미 사용 중 |
-| ** 간단한 외부 API 연동** | RestClient | 학습 곡선이 낮음 |
+| **일반적인 API 호출**| RestClient | 간결하고 직관적 |
+| **대량의 병렬 요청**| WebClient | Non-blocking I/O |
+| **레거시 코드**| RestTemplate | 이미 사용 중 |
+| **간단한 외부 API 연동**| RestClient | 학습 곡선이 낮음 |
 
 ---
 
-##  공공데이터 포털 API 소개
+## 공공데이터 포털 API 소개
 
 ### 국내항공운항정보 API
 
 | 항목 | 내용 |
 |------|------|
-| **API 이름** | 국내항공운항정보 |
-| ** 제공기관** | 한국공항공사 |
-| ** 설명** | 국내 공항 간의 항공편 운항 스케줄 정보 |
-| **URL** | https://apis.data.go.kr/1613000/DmstcFlightNvgInfo |
+| **API 이름**| 국내항공운항정보 |
+| **제공기관**| 한국공항공사 |
+| **설명**| 국내 공항 간의 항공편 운항 스케줄 정보 |
+| **URL**| https://apis.data.go.kr/1613000/DmstcFlightNvgInfo |
 
 ### 주요 엔드포인트
 
@@ -112,7 +112,7 @@ RestClient restClient = RestClient.builder()
 
 ---
 
-##  Step 6-1: API 연동 설정
+## Step 6-1: API 연동 설정
 
 ### application.yml 설정
 
@@ -145,7 +145,7 @@ public class DataGoKrApiProperties {
 
 ---
 
-##  Step 6-2: DTO 정의
+## Step 6-2: DTO 정의
 
 ### FlightInfoResponse.java
 
@@ -245,7 +245,7 @@ public class ApiResponseWrapper {
 
 ---
 
-## 🔌 Step 6-3: API 클라이언트 구현
+##  Step 6-3: API 클라이언트 구현
 
 ### ApiClientService.java
 
@@ -334,7 +334,7 @@ public class ApiClientService {
 
 ---
 
-##  Step 6-4: FlightSearchTool 구현
+## Step 6-4: FlightSearchTool 구현
 
 ### FlightSearchTool.java
 
@@ -452,7 +452,7 @@ public class FlightSearchTool {
 
 ---
 
-##  Step 6-5: 테스트
+## Step 6-5: 테스트
 
 ### FlightSearchController.java
 
@@ -509,7 +509,7 @@ public class FlightSearchController {
 curl "http://localhost:8080/api/flight/search?departure=광주&arrival=제주&date=2026-03-10"
 ```
 
-** 예상 응답:**
+**예상 응답:**
 ```
 항공편 검색 결과:
 
@@ -525,7 +525,7 @@ curl "http://localhost:8080/api/flight/search?departure=광주&arrival=제주&da
 
 ---
 
-##  Step 6-6: LLM과 통합
+## Step 6-6: LLM과 통합
 
 ### ChatClient에 Tool 등록
 
@@ -569,33 +569,33 @@ curl "http://localhost:8080/api/chat/ollama?question=내일광주에서제주로
 
 ---
 
-##  일반적인 문제 해결
+## 일반적인 문제 해결
 
 ### 문제 1: API 응답이 없음
 
-** 증상:** 빈 목록 반환
+**증상:**빈 목록 반환
 
-** 해결 방법:**
+**해결 방법:**
 1. 서비스키가 올바른지 확인
 2. 파라미터 형식 확인 (YYYYMMDD)
 3. 공항 코드 확인
 
 ### 문제 2: "SERVICE KEY IS NOT REGISTERED ERROR"
 
-** 해결 방법:**
+**해결 방법:**
 1. 공공데이터 포털에서 활용신청
 2. Decoding 키 사용 (URL 인코딩된 키 X)
 
 ### 문제 3: 응답 시간이 너무 김
 
-** 해결 방법:**
+**해결 방법:**
 1. 항공사별 최대 3편만 반환
 2. 캐싱 적용
 3. 비동기 처리
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] `ApiClientService`가 구현됨
 - [ ] `FlightSearchTool`이 구현됨
@@ -606,13 +606,13 @@ curl "http://localhost:8080/api/chat/ollama?question=내일광주에서제주로
 
 ---
 
-##  다음 단계
+## 다음 단계
 
-**Step 7: 공항/항공사 정보 Tool** 에서 공항 코드 조회, 항공사 정보 조회 등의 Tool을 추가로 구현합니다.
+**Step 7: 공항/항공사 정보 Tool**에서 공항 코드 조회, 항공사 정보 조회 등의 Tool을 추가로 구현합니다.
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [공공데이터포털](https://www.data.go.kr/)
 - [국내항공운항정보 API 문서](https://www.data.go.kr/data/15098526/openapi.do)

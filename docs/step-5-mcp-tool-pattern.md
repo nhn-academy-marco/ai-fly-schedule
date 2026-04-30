@@ -1,9 +1,9 @@
 # Step 5: 다중 Function Calling과 MCP Tool 패턴
 
-##  학습 목표
-이 단계에서는 여러 개의 **Function Calling Tool** 을 효과적으로 관리하고 **MCP (Model Context Protocol) Tool 패턴** 을 설계하는 방법을 학습합니다.
+## 학습 목표
+이 단계에서는 여러 개의 **Function Calling Tool**을 효과적으로 관리하고 **MCP (Model Context Protocol) Tool 패턴**을 설계하는 방법을 학습합니다.
 
-** 학습 완료 후 할 수 있는 것:**
+**학습 완료 후 할 수 있는 것:**
 - 여러 Tool을 효과적으로 관리
 - MCP Tool 설계 패턴 적용
 - Tool 간의 관계와 책임 분리
@@ -11,9 +11,9 @@
 
 ---
 
-##  MCP Tool 패턴이란?
+## MCP Tool 패턴이란?
 
-**MCP (Model Context Protocol) Tool 패턴** 은 LLM이 사용할 수 있는 ** 도구(Tool)** 를 체계적으로 설계하고 구현하는 패턴입니다.
+**MCP (Model Context Protocol) Tool 패턴**은 LLM이 사용할 수 있는 **도구(Tool)**를 체계적으로 설계하고 구현하는 패턴입니다.
 
 ### MCP (Model Context Protocol)의 기원
 
@@ -94,14 +94,14 @@ public class GoodTool {
 
 | 원칙 | 설명 | 예시 |
 |------|------|------|
-| ** 단일 책임** | 하나의 Tool은 하나의 명확한 기능만 | `searchFlights`, `getAirports` |
-| ** 명확한 인터페이스** | 파라미터와 반환값이 명확해야 함 | `String departure`, `Map<String, List<Flight>>` |
-| ** 독립성** | 각 Tool은 독립적으로 동작 가능 | `searchFlights`는 `getAirports` 없이도 동작 |
-| ** 재사용성** | 다른 Tool에서도 사용 가능 | `getAirportCode`는 여러 Tool에서 활용 |
+| **단일 책임**| 하나의 Tool은 하나의 명확한 기능만 | `searchFlights`, `getAirports` |
+| **명확한 인터페이스**| 파라미터와 반환값이 명확해야 함 | `String departure`, `Map<String, List<Flight>>` |
+| **독립성**| 각 Tool은 독립적으로 동작 가능 | `searchFlights`는 `getAirports` 없이도 동작 |
+| **재사용성**| 다른 Tool에서도 사용 가능 | `getAirportCode`는 여러 Tool에서 활용 |
 
 ---
 
-##  Step 5-1: Tool 카테고리 분류
+## Step 5-1: Tool 카테고리 분류
 
 ### Tool 카테고리 구조
 
@@ -129,7 +129,7 @@ MCP Tools
 
 ---
 
-##  Step 5-2: Tool 관리 전략
+## Step 5-2: Tool 관리 전략
 
 ### 전략 1: 기능별 Tool 분리
 
@@ -165,7 +165,7 @@ public class FlightSearchTool {
 }
 ```
 
-** 장점:**
+**장점:**
 - 관련 Tool들이 같은 클래스에 모여 있음
 - 유지보수가 쉬움
 - 기능 확장이 용이
@@ -192,19 +192,19 @@ public class AllInOneTool {
 }
 ```
 
-** 장점:**
+**장점:**
 - 모든 Tool이 한 곳에 있어서 찾기 쉬움
 - 설정이 간단
 
-** 단점:**
+**단점:**
 - 클래스가 커질 수 있음
 - 관련 없는 Tool들이 섞임
 
-** 권장:** 전략 1 (기능별 분리)
+**권장:**전략 1 (기능별 분리)
 
 ---
 
-##  Step 5-3: Tool 등록 패턴
+## Step 5-3: Tool 등록 패턴
 
 ### 패턴 1: 명시적 등록 (권장)
 
@@ -230,7 +230,7 @@ public class ChatClientConfig {
 }
 ```
 
-** 장점:**
+**장점:**
 - 어떤 Tool이 등록되었는지 명확
 - 순서 제어 가능
 - 선택적 Tool 등록 가능
@@ -264,17 +264,17 @@ public class ChatClientConfig {
 }
 ```
 
-** 장점:**
+**장점:**
 - 새 Tool 추가 시 설정 수정 불필요
 - 자동으로 모든 Tool 등록
 
-** 단점:**
+**단점:**
 - 등록된 Tool을 확인하기 어려움
 - 순서 제어 어려움
 
 ---
 
-##  Step 5-4: Tool 조합 예시
+## Step 5-4: Tool 조합 예시
 
 ### 예시 1: 단일 Tool 호출
 
@@ -314,17 +314,17 @@ LLM: "전국 공항은 15개이고, 항공사는 8개입니다..." 응답
 
 ---
 
-##  Step 5-5: Tool Description 최적화
+## Step 5-5: Tool Description 최적화
 
 ### 좋은 Description의 5가지 원칙
 
 | 원칙 | 설명 | 나쁜 예시 | 좋은 예시 |
 |------|------|----------|----------|
-| **1. 무엇을 하는지** | 기능 명확히 설명 | "검색" | "항공편을 검색하여 항공사별로 정리합니다" |
-| **2. 언제 사용하는지** | 사용 상황 명시 | (없음) | "사용자가 특정 날짜의 항공편을 물어볼 때 사용" |
-| **3. 파라미터 설명** | 각 파라미터 역할 명시 | "날짜" | "날짜 (예: 내일, 모레, 2026-03-10)" |
-| **4. 반환값 설명** | 무엇을 반환하는지 명시 | (없음) | "항공사별 항공편 목록을 Map 형태로 반환" |
-| **5. 제한 사항** | 제한이 있으면 명시 | (없음) | "항공사별 최대 3편만 반환 (응답 속도 최적화)" |
+| **1. 무엇을 하는지**| 기능 명확히 설명 | "검색" | "항공편을 검색하여 항공사별로 정리합니다" |
+| **2. 언제 사용하는지**| 사용 상황 명시 | (없음) | "사용자가 특정 날짜의 항공편을 물어볼 때 사용" |
+| **3. 파라미터 설명**| 각 파라미터 역할 명시 | "날짜" | "날짜 (예: 내일, 모레, 2026-03-10)" |
+| **4. 반환값 설명**| 무엇을 반환하는지 명시 | (없음) | "항공사별 항공편 목록을 Map 형태로 반환" |
+| **5. 제한 사항**| 제한이 있으면 명시 | (없음) | "항공사별 최대 3편만 반환 (응답 속도 최적화)" |
 
 ### Description 예시
 
@@ -363,7 +363,7 @@ public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
 
 ---
 
-##  Step 5-6: Tool 설계 패턴
+## Step 5-6: Tool 설계 패턴
 
 ### 패턴 1: 조회 Tool (Read-Only)
 
@@ -378,7 +378,7 @@ public class ReadOnlyTool {
 }
 ```
 
-** 특징:**
+**특징:**
 - 부작용(Side Effect) 없음
 - 여러 번 호출해도 안전
 - 캐싱 가능
@@ -397,7 +397,7 @@ public class CommandTool {
 }
 ```
 
-** 특징:**
+**특징:**
 - 부작용 있음
 - 한 번만 호출해야 함
 - 권한 체크 필요
@@ -421,21 +421,21 @@ public class FilterTool {
 }
 ```
 
-** 특징:**
+**특징:**
 - 다른 Tool의 결과를 입력으로 받음
 - 순수 함수 형태
 - 재사용 가능
 
 ---
 
-##  Tool 성능 최적화
+## Tool 성능 최적화
 
 ### 최적화 1: 결과 제한
 
 ```java
 @Tool(description = "항공편 검색 (최대 100편)")
 public List<Flight> searchFlights(...) {
-    List<Flight> allFlights = apiClient.search(...);
+    List<Flight> allFlights = apiClient.search(...)
     return allFlights.stream()
             .limit(100)  // 결과 제한
             .toList();
@@ -448,7 +448,7 @@ public List<Flight> searchFlights(...) {
 @Tool(description = "항공편 검색 (비동기)")
 public CompletableFuture<List<Flight>> searchFlightsAsync(...) {
     return CompletableFuture.supplyAsync(() -> {
-        return apiClient.search(...);
+        return apiClient.search(...)
     });
 }
 ```
@@ -476,13 +476,13 @@ public class CachedTool {
 
 ---
 
-##  일반적인 문제 해결
+## 일반적인 문제 해결
 
 ### 문제 1: LLM이 적절한 Tool을 선택하지 못함
 
-** 증상:** 다른 Tool이 호출되거나 Tool이 호출되지 않음
+**증상:**다른 Tool이 호출되거나 Tool이 호출되지 않음
 
-** 해결 방법:**
+**해결 방법:**
 1. Description 더 구체화
 2. Tool 이름 명확하게
 3. 파라미터 설명 상세화
@@ -502,9 +502,9 @@ public Map<String, List<Flight>> searchFlightsByAirline(
 
 ### 문제 2: Tool이 너무 많아서 LLM이 혼란스러워함
 
-** 증상:** 엉뚱한 Tool이 호출됨
+**증상:**엉뚱한 Tool이 호출됨
 
-** 해결 방법:**
+**해결 방법:**
 1. 관련 Tool끼리 그룹화
 2. `defaultTools()` 대신 특정 상황별로 다른 Tool 세트 사용
 3. Tool 수 줄이기 (비슷한 Tool 통합)
@@ -527,9 +527,9 @@ public ChatClient.Builder flightSearchBuilder(...) {
 
 ### 문제 3: Tool 호출 순서 문제
 
-** 증상:** 선행 Tool의 결과가 필요한데 먼저 호출되지 않음
+**증상:**선행 Tool의 결과가 필요한데 먼저 호출되지 않음
 
-** 해결 방법:**
+**해결 방법:**
 1. Description에 "먼저 X를 호출해야 함" 명시
 2. 필요한 데이터를 파라미터로 받도록 설계
 3. Tool 내부에서 다른 Tool 호출
@@ -552,7 +552,7 @@ public List<Flight> searchFlights(
 
 ---
 
-##  체크리스트
+## 체크리스트
 
 - [ ] Tool이 기능별로 분리됨
 - [ ] 각 Tool이 단일 책임을 가짐
@@ -563,13 +563,13 @@ public List<Flight> searchFlights(
 
 ---
 
-##  다음 단계
+## 다음 단계
 
-**Step 6: 항공편 검색 Tool 구현** 에서 실제 공공데이터 API와 연동하는 MCP Tool을 구현합니다.
+**Step 6: 항공편 검색 Tool 구현**에서 실제 공공데이터 API와 연동하는 MCP Tool을 구현합니다.
 
 ---
 
-##  참고 자료
+## 참고 자료
 
 - [Spring AI Function Calling 가이드](https://docs.spring.io/spring-ai/reference/api/functioncalling.html)
 - [MCP (Model Context Protocol) 사양](https://modelcontextprotocol.io/)
@@ -577,16 +577,16 @@ public List<Flight> searchFlights(
 
 ---
 
-##  심화 학습
+## 심화 학습
 
 ### Tool 네이밍 컨벤션
 
 | 패턴 | 예시 | 설명 |
 |------|------|------|
-| ** 동사 + 명사** | `searchFlights`, `getAirports` | 무엇을 하는지 명확 |
-| ** 구체적 이름** | `searchFlightsByAirline` | `search`보다 명확 |
-| ** 질문 형태** | `hasFlights`, `canBook` | Boolean 반환일 때 |
-| ** 복수형 사용** | `getAirports`, `listFlights` | 컬렉션 반환일 때 |
+| **동사 + 명사**| `searchFlights`, `getAirports` | 무엇을 하는지 명확 |
+| **구체적 이름**| `searchFlightsByAirline` | `search`보다 명확 |
+| **질문 형태**| `hasFlights`, `canBook` | Boolean 반환일 때 |
+| **복수형 사용**| `getAirports`, `listFlights` | 컬렉션 반환일 때 |
 
 ### Tool 버전 관리
 

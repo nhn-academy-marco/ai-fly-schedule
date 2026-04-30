@@ -1,7 +1,7 @@
 package com.nhnacademy.flyschedule.mcp;
 
 import com.nhnacademy.flyschedule.dto.response.FlightInfoResponse;
-import com.nhnacademy.flyschedule.service.FlightSearchAgent;
+import com.nhnacademy.flyschedule.service.agent.FlightSearchAgent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

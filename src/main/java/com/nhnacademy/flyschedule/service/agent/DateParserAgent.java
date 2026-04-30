@@ -1,4 +1,4 @@
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.agent;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -11,7 +11,7 @@ import java.time.format.DateTimeParseException;
  * 날짜 파싱 A2A 에이전트
  *
  * 사용자의 자연어 날짜 표현을 API 요청 형식으로 변환합니다.
- * 지원하는 표현: "내일", "모레", "글피", "2025-03-09"
+ * 지원하는 표현: "내일", "모레", "글피", "2026-03-25"
  */
 @Slf4j
 @Service
@@ -23,7 +23,7 @@ public class DateParserAgent {
     /**
      * 사용자의 날짜 표현을 API 요청 형식(YYYYMMDD)으로 변환합니다.
      *
-     * @param dateInput 날짜 입력 (예: "내일", "2025-03-09", "20250309")
+     * @param dateInput 날짜 입력 (예: "내일", "2026-03-25", "20260325")
      * @return API 요청 형식의 날짜 (예: "20250309")
      */
     public String parseDate(String dateInput) {

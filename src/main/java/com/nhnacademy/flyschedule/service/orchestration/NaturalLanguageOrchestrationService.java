@@ -1,6 +1,8 @@
-package com.nhnacademy.flyschedule.service;
+package com.nhnacademy.flyschedule.service.orchestration;
 
 import com.nhnacademy.flyschedule.dto.response.FlightInfoResponse;
+import com.nhnacademy.flyschedule.service.agent.*;
+import com.nhnacademy.flyschedule.service.ai.LlmAnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

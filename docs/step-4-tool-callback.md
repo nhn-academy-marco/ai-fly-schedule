@@ -1,13 +1,58 @@
 # Step 4: Tool Callback과 실행 과정 이해
 
 ## 학습 목표
-이 단계에서는 **ChatClient Advisor**를 사용하여 Function Calling의 실행 과정을 모니터링하고 디버깅하는 방법을 학습합니다.
 
-**학습 완료 후 할 수 있는 것:**
-- `SimpleLoggerAdvisor`로 실행 과정 로깅
-- Function Calling 실행 과정 이해
-- LLM의 Tool 선택 과정 확인
-- 디버깅 및 성능 최적화
+이 단계를 마치면 다음을 할 수 있습니다:
+
+- `SimpleLoggerAdvisor`를 사용하여 LLM의 요청과 응답을 로깅할 수 있습니다
+- 사용자 정의 Advisor를 구현하여 Function Calling의 실행 시간과 결과를 모니터링할 수 있습니다
+- Advisor의 파이프라인 패턴을 이해하고 실행 순서를 제어할 수 있습니다
+- 개발 환경과 운영 환경에 맞는 Advisor 조합을 구성할 수 있습니다
+
+---
+
+> **핵심 개념**: Advisor는 ChatClient의 요청/응답 과정에 "끼어드는(Intercept)" 메커니즘입니다. 쉽게 말해, Spring MVC의 `HandlerInterceptor`나 서블릿의 `Filter`와 같은 역할이라고 생각하면 됩니다. Controller에 요청이 도달하기 전/후에 공통 로직을 실행하는 Filter처럼, LLM에 요청이 전달되기 전/후에 로깅이나 모니터링 로직을 실행하는 것이 Advisor입니다.
+
+---
+
+## 전체 흐름
+
+Advisor가 Function Calling 과정에서 동작하는 위치를 보여주는 흐름도입니다:
+
+```
+[사용자 요청: "내일 광주에서 제주로 항공편 알려줘"]
+                    ↓
+┌─────────────────────────────────────┐
+│ Advisor #1: 요청 로깅              │  ← "어떤 질문이 들어왔는지" 기록
+└─────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────┐
+│ Advisor #2: 실행 시간 측정 시작     │  ← 타이머 시작
+└─────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────┐
+│ ChatClient → LLM 호출               │
+│   LLM이 Tool 선택: FlightSearchTool │
+│   Tool 실행: search("광주","제주")  │
+│   LLM이 자연어로 응답 생성          │
+└─────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────┐
+│ Advisor #2: 실행 시간 측정 종료     │  ← 타이머 종료, 소요 시간 계산
+└─────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────┐
+│ Advisor #1: 응답 로깅              │  ← "어떤 답변이 나갔는지" 기록
+└─────────────────────────────────────┘
+                    ↓
+[사용자에게 응답 전달]
+```
+
+Spring MVC Filter와의 비교:
+```
+Spring MVC:  [HTTP 요청] → [Filter] → [Interceptor] → [Controller] → [Service]
+Spring AI:   [사용자 질문] → [Advisor #1] → [Advisor #2] → [ChatClient → LLM]
+```
 
 ---
 
@@ -58,6 +103,14 @@
 
 ## Step 4-1: SimpleLoggerAdvisor 적용
 
+### 왜 이렇게 할까요?
+
+Step 3에서 Function Calling을 구현했지만, LLM이 실제로 어떤 Tool을 선택했는지, 어떤 파라미터를 넘겼는지, Tool 실행에 얼마나 시간이 걸렸는지 알기 어렵습니다. 콘솔에 아무 로그도 출력되지 않기 때문에, 문제가 발생해도 원인을 파악할 수 없습니다.
+
+`SimpleLoggerAdvisor`는 Spring AI에서 기본으로 제공하는 Advisor로, LLM에게 보낸 요청과 받은 응답을 자동으로 로깅합니다. 별도의 코드 없이 Advisor 하나만 추가하면 Function Calling의 전체 과정을 추적할 수 있습니다.
+
+> **Spring Boot 복습**: `SimpleLoggerAdvisor`는 Spring MVC의 `CommonsRequestLoggingFilter`와 비슷한 역할을 합니다. 필터를 추가하면 모든 HTTP 요청이 자동으로 로깅되듯, Advisor를 추가하면 모든 LLM 요청/응답이 자동으로 로깅됩니다. Step 2에서 만든 `ChatClientConfig`의 Builder에 `.defaultAdvisors()` 한 줄만 추가하면 됩니다.
+
 ### ChatClientConfig에 SimpleLoggerAdvisor 추가
 
 ```java
@@ -77,23 +130,23 @@ import org.springframework.context.annotation.Primary;
 /**
  * ChatClient Configuration for Spring AI
  */
-@Configuration
+@Configuration  // ① Spring 설정 클래스 (Step 2에서 이미 배웠습니다!)
 public class ChatClientConfig {
 
     /**
      * Ollama ChatClient.Builder (기본)
      */
     @Bean
-    @Primary
+    @Primary  // ② @Primary: ChatClient.Builder 주입 시 이 Bean이 기본으로 선택됨
     public ChatClient.Builder ollamaChatClientBuilder(
-            @Qualifier("ollamaChatModel") ChatModel ollamaChatModel,
-            FlightSearchTool flightSearchTool,
-            AirportInfoTool airportInfoTool,
-            AirlineInfoTool airlineInfoTool) {
+            @Qualifier("ollamaChatModel") ChatModel ollamaChatModel,  // ③ Ollama 모델 주입
+            FlightSearchTool flightSearchTool,        // ④ Tool Bean 자동 주입 (Step 3에서 배움)
+            AirportInfoTool airportInfoTool,          // ⑤ 추가 Tool Bean
+            AirlineInfoTool airlineInfoTool) {        // ⑥ 추가 Tool Bean
 
-        return ChatClient.builder(ollamaChatModel)
-                .defaultTools(flightSearchTool, airportInfoTool, airlineInfoTool)
-                .defaultAdvisors(new SimpleLoggerAdvisor());  // 로깅 어드바이저 추가
+        return ChatClient.builder(ollamaChatModel)    // ⑦ ChatClient.Builder 생성
+                .defaultTools(flightSearchTool, airportInfoTool, airlineInfoTool)  // ⑧ Tool 3개 등록
+                .defaultAdvisors(new SimpleLoggerAdvisor());  // ⑨ 로깅 Advisor 추가 (이번 단계의 핵심!)
     }
 }
 ```
@@ -138,6 +191,18 @@ DEBUG o.s.a.c.client.advisor.SimpleLoggerAdvisor :
 
 ## Step 4-3: 사용자 정의 로깅이 필요한 경우
 
+### 왜 이렇게 할까요?
+
+`SimpleLoggerAdvisor`는 기본적인 요청/응답 로깅만 제공합니다. 하지만 실제 개발에서는 다음과 같은 추가 정보가 필요할 수 있습니다:
+
+- **실행 시간**: LLM 호출에 얼마나 시간이 걸렸는지 측정하고 싶을 때
+- **요청 추적**: 여러 요청이 동시에 들어올 때 각 요청을 구분하고 싶을 때
+- **상세 로깅**: Tool의 입력값과 출력값을 더 자세히 기록하고 싶을 때
+
+이럴 때는 Spring AI의 `CallAroundAdvisor` 인터페이스를 구현하여 나만의 Advisor를 만들 수 있습니다. Spring MVC에서 `HandlerInterceptor`를 구현하여 커스텀 로깅을 만들었던 것과 동일한 방식입니다.
+
+> **Spring Boot 복습**: `CallAroundAdvisor`는 AOP(관점 지향 프로그래밍)의 Around Advice와 같은 패턴입니다. `chain.nextAroundCall()`이 실제 LLM 호출이며, 그 앞뒤로 원하는 로직을 실행할 수 있습니다. 이것은 Servlet Filter의 `doFilter()` 호출이나 Spring Interceptor의 `preHandle()`/`postHandle()`과 동일한 구조입니다.
+
 ### CustomLoggingAdvisor 구현
 
 ```java
@@ -158,47 +223,50 @@ import java.util.Map;
 /**
  * 사용자 정의 로깅 어드바이저
  */
-@Component
-public class CustomLoggingAdvisor implements CallAroundAdvisor {
+@Component  // ① Spring Bean으로 등록하여 다른 곳에서 주입받을 수 있게 함
+public class CustomLoggingAdvisor implements CallAroundAdvisor {  // ② CallAroundAdvisor 인터페이스 구현
 
     private static final Logger log = LoggerFactory.getLogger(CustomLoggingAdvisor.class);
 
-    private final Map<String, Long> startTimeMap = new HashMap<>();
+    private final Map<String, Long> startTimeMap = new HashMap<>();  // ③ 요청별 시작 시간 저장
 
     @Override
-    public String getName() {
+    public String getName() {  // ④ Advisor의 이름 반환 (로그에서 식별용)
         return "CustomLoggingAdvisor";
     }
 
     @Override
     public ChatResponse aroundCall(
-            UserMessage userMessage,
-            ChatOptions options,
-            CallAroundAdvisorChain chain) {
+            UserMessage userMessage,     // ⑤ 사용자가 보낸 메시지
+            ChatOptions options,          // ⑥ LLM 호출 옵션
+            CallAroundAdvisorChain chain) {  // ⑦ 다음 Advisor 또는 실제 LLM 호출을 수행하는 체인
 
+        // ⑧ 고유한 요청 ID 생성 (여러 요청이 동시에 들어와도 구분 가능)
         String requestId = java.util.UUID.randomUUID().toString().substring(0, 8);
-        startTimeMap.put(requestId, System.currentTimeMillis());
+        startTimeMap.put(requestId, System.currentTimeMillis());  // ⑨ 시작 시간 기록
 
         log.info("========================================");
         log.info("요청 ID: {}", requestId);
-        log.info("사용자 요청: {}", userMessage.getContent());
+        log.info("사용자 요청: {}", userMessage.getContent());  // ⑩ 사용자 질문 내용 로깅
         log.info("========================================");
 
         try {
+            // ⑪ 핵심: chain.nextAroundCall()이 실제 LLM 호출을 수행합니다
+            // 이 줄 앞에 코드는 "요청 전 처리", 뒤에 코드는 "응답 후 처리"가 됩니다
             ChatResponse response = chain.nextAroundCall(userMessage, options);
 
-            long duration = System.currentTimeMillis() - startTimeMap.get(requestId);
+            long duration = System.currentTimeMillis() - startTimeMap.get(requestId);  // ⑫ 소요 시간 계산
 
             log.info("========================================");
             log.info("응답 ID: {}", requestId);
-            log.info("전체 실행 시간: {}ms", duration);
-            log.info("응답 내용: {}", response.getResult().getOutput().getContent());
+            log.info("전체 실행 시간: {}ms", duration);  // ⑬ LLM 호출 + Tool 실행 포함 전체 시간
+            log.info("응답 내용: {}", response.getResult().getOutput().getContent());  // ⑭ LLM이 생성한 답변
             log.info("========================================");
 
             return response;
 
         } finally {
-            startTimeMap.remove(requestId);
+            startTimeMap.remove(requestId);  // ⑮ 메모리 누수 방지: 요청 완료 후 정리
         }
     }
 }
@@ -561,6 +629,19 @@ Advisor는 등록된 순서대로 실행됩니다 (First In, First Executed):
 - [ ] `CustomLoggingAdvisor`가 필요에 따라 구현됨
 - [ ] `PerformanceMonitoringAdvisor`로 성능 측정
 - [ ] 운영 환경에 맞는 Advisor 구성 완료
+
+---
+
+## 요약
+
+이번 단계에서는 Advisor를 사용하여 Function Calling의 실행 과정을 모니터링하는 방법을 배웠습니다:
+
+1. **SimpleLoggerAdvisor**: Spring AI에서 제공하는 기본 로깅 Advisor로, `.defaultAdvisors(new SimpleLoggerAdvisor())` 한 줄로 요청/응답 로깅을 활성화했습니다
+2. **CallAroundAdvisor 인터페이스**: `chain.nextAroundCall()` 앞뒤로 로직을 실행하는 Around Advice 패턴으로, 실행 시간 측정이나 상세 로깅 같은 커스텀 로직을 구현했습니다
+3. **Advisor 파이프라인**: 여러 Advisor를 등록하면 등록된 순서대로 실행되며, 응답은 역순으로 처리됩니다
+4. **실전 활용**: 개발 환경에서는 상세 로깅, 운영 환경에서는 성능 모니터링과 캐싱 Advisor를 조합하여 사용합니다
+
+여기까지 Step 1~4를 통해 Spring AI의 기본 설정부터 ChatClient 사용, Function Calling, 그리고 실행 과정 모니터링까지 모두 학습했습니다.
 
 ---
 

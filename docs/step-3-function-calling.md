@@ -1,12 +1,49 @@
 # Step 3: Function Calling 기초
 
 ## 학습 목표
-이 단계에서는 Spring AI의 **Function Calling**기능을 사용하여 LLM이 자바 메서드를 호출할 수 있게 만듭니다.
 
-**학습 완료 후 할 수 있는 것:**
-- `@Tool`, `@ToolParam` annotation 사용
-- 첫 번째 Function Call 구현
-- LLM이 자동으로 Tool을 선택하고 호출하는 과정 이해
+이 단계를 마치면 다음을 할 수 있습니다:
+
+- `@Tool`과 `@ToolParam` annotation을 사용하여 LLM이 호출할 수 있는 자바 메서드를 정의할 수 있습니다
+- LLM이 사용자의 자연어 질문을 분석하여 적절한 Tool을 자동으로 선택하고 호출하는 과정을 이해할 수 있습니다
+- ChatClient에 Tool을 등록하여 Function Calling을 활성화할 수 있습니다
+- 여러 Tool을 조합하여 복잡한 사용자 요청을 처리할 수 있습니다
+
+---
+
+> **핵심 개념**: Function Calling은 LLM이 자연어 질문을 분석하여 적절한 자바 메서드를 **자동으로** 호출하는 기술입니다. 쉽게 말해, 사용자가 "내일 광주에서 제주로 가는 항공편 알려줘"라고 말하면, LLM이 이 문장을 분석해서 `searchFlights("광주", "제주", "내일")` 메서드를 알아서 호출해 줍니다. 개발자가 if-else로 입력을 파싱할 필요가 없습니다.
+
+---
+
+## 전체 흐름
+
+Function Calling이 동작하는 전체 과정은 다음과 같습니다:
+
+```
+[사용자: "10과 20의 합은?"]
+            ↓
+[Controller → Service → ChatClient]
+            ↓
+[LLM이 질문 분석]
+   - 의도: 덧셈 계산
+   - 선택: add() Tool
+   - 파라미터: a=10, b=20
+            ↓
+[Spring AI가 자동으로 CalculatorTool.add(10, 20) 호출]
+            ↓
+[Tool 실행 결과: 30]
+            ↓
+[LLM이 결과를 받아 자연어로 응답 생성]
+   "10과 20의 합은 30입니다."
+            ↓
+[사용자에게 응답 전달]
+```
+
+기존 방식과 비교:
+```
+기존: [사용자 입력] → [if-else 파싱] → [직접 메서드 호출] → [결과 포맷팅]
+AI:   [사용자 입력] → [LLM이 자동 분석] → [자동 메서드 호출] → [자연어 응답]
+```
 
 ---
 
@@ -149,6 +186,14 @@ LLM 응답: "네, 내일 광주에서 제주로 가는 항공편은 아시아나
 
 ## Step 3-1: @Tool Annotation
 
+### 왜 이렇게 할까요?
+
+Step 2까지는 ChatClient로 LLM에게 질문하고 답변을 받기만 했습니다. 하지만 LLM은 "10과 20의 합은?" 같은 질문에도 계산 결과를 틀릴 수 있습니다(특히 복잡한 계산에서). 그리고 "내일 광주에서 제주로 가는 항공편" 같은 질문은 LLM이 실시간 항공편 데이터를 가지고 있지 않아서 답변할 수 없습니다.
+
+Function Calling은 이 문제를 해결합니다. LLM이 직접 답변하는 대신, 정확한 계산이나 실시간 데이터 조회는 **우리가 만든 자바 메서드**에게 맡기는 것입니다. LLM은 어떤 메서드를 호출할지, 어떤 파라미터를 넘길지만 결정합니다.
+
+> **Spring Boot 복습**: `@Component`는 Spring이 클래스를 스캔하여 Bean으로 등록하게 만드는 annotation입니다. `@Service`, `@Repository`도 `@Component`의 특수화 버전입니다. 여기서는 `@Component`를 사용하는데, Tool 클래스는 비즈니스 로직(Service)이나 데이터 접근(Repository)보다는 "AI가 호출할 수 있는 기능"이라는 의미이기 때문입니다.
+
 Spring AI 1.1.2의 공식 `@Tool` annotation을 사용하여 LLM이 호출할 수 있는 메서드를 정의합니다.
 
 ### 첫 번째 Tool: 간단한 계산기
@@ -162,7 +207,7 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
-@Component  // Spring이 이 클래스를 Bean으로 관리 (익숙하죠?)
+@Component  // ① Spring이 이 클래스를 Bean으로 관리 (익숙하죠?)
 public class CalculatorTool {
 
     /**
@@ -174,12 +219,12 @@ public class CalculatorTool {
      * @param b 두 번째 숫자 (LLM이 자동으로 추출한 값)
      * @return 두 숫자의 합 (LLM이 이 결과를 사용하여 답변 생성)
      */
-    @Tool(description = "두 숫자의 합을 계산합니다.")  // LLM에게 이 함수의 용도 설명
+    @Tool(description = "두 숫자의 합을 계산합니다.")  // ② LLM에게 이 함수의 용도를 설명하는 annotation
     public int add(
-            @ToolParam(description = "첫 번째 숫자") int a,  // 파라미터 설명 (LLM이 이해)
-            @ToolParam(description = "두 번째 숫자") int b) {
+            @ToolParam(description = "첫 번째 숫자") int a,  // ③ LLM이 "3 더하기 5"에서 3을 추출하여 이 매개변수에 전달
+            @ToolParam(description = "두 번째 숫자") int b) {  // ④ LLM이 "3 더하기 5"에서 5를 추출하여 이 매개변수에 전달
 
-        // 평범한 자바 메서드! LLM이 자동으로 호출
+        // ⑤ 평범한 자바 메서드! LLM이 아닌 JVM이 실행합니다
         return a + b;
     }
 
@@ -188,12 +233,12 @@ public class CalculatorTool {
      *
      * @Tool 어노테이션이 있으면 LLM이 호출할 수 있습니다.
      */
-    @Tool(description = "두 숫자의 곱을 계산합니다.")
+    @Tool(description = "두 숫자의 곱을 계산합니다.")  // ⑥ "곱하기" 관련 질문이 오면 LLM이 이 메서드를 선택
     public int multiply(
             @ToolParam(description = "첫 번째 숫자") int a,
             @ToolParam(description = "두 번째 숫자") int b) {
 
-        return a * b;
+        return a * b;  // ⑦ 반환값이 LLM에게 전달되어 최종 답변에 사용됩니다
     }
 }
 ```
@@ -333,6 +378,12 @@ LLM의 이해: "아, 더하기는 add() 함수를 호출하면 되는구나!"
 
 ## Step 3-2: Tool 등록 방법
 
+### 왜 이렇게 할까요?
+
+`@Tool` annotation을 붙인 메서드를 만들었지만, ChatClient가 이 Tool의 존재를 알아야 LLM에게 "이런 Tool을 사용할 수 있어"라고 알려줄 수 있습니다. 마치 `@Service` 클래스를 만들어도 다른 Bean에 주입하지 않으면 사용할 수 없는 것과 같습니다. ChatClient를 생성할 때 `defaultTools()` 메서드로 Tool을 등록해야 합니다.
+
+> **Spring Boot 복습**: Step 2에서 `ChatClient.Builder`를 Bean으로 등록했습니다. 여기서는 그 Builder에 Tool을 추가하는 것뿐입니다. 기존에 데이터베이스 설정에 `DataSource`를 등록하듯, AI 설정에 Tool을 등록한다고 생각하면 됩니다. `CalculatorTool`은 `@Component`로 등록된 Bean이므로, 생성자 주입으로 자동으로 받을 수 있습니다.
+
 ### 방법 1: ChatClient.Builder에 등록 (권장)
 
 ```java
@@ -388,6 +439,12 @@ public class ChatClientConfig {
 ---
 
 ## Step 3-3: Function Calling 테스트
+
+### 왜 이렇게 할까요?
+
+Tool을 만들고 ChatClient에 등록했지만, 실제로 사용자의 요청이 들어왔을 때 LLM이 Tool을 정확히 선택하고 파라미터를 올바르게 추출하는지 확인해야 합니다. 간단한 계산기 Tool로 먼저 테스트해 보면서, LLM이 "10과 20의 합은?" 이라는 질문을 보면 `add(10, 20)`을 자동으로 호출하는지 검증합니다.
+
+> **Spring Boot 복습**: Service와 Controller의 구조는 Step 2와 동일합니다. `@Service`에서 ChatClient를 사용하고, `@RestController`에서 HTTP 요청을 처리합니다. 새로운 것은 Service 내부의 코드가 아니라, ChatClient가 Function Calling을 수행한다는 점뿐입니다. 코드상으로는 Step 2와 같은 `chatClient.prompt().user(message).call().content()`인데, Tool이 등록되어 있으면 Spring AI가 자동으로 Function Calling을 수행합니다.
 
 ### FunctionCallTestService.java
 
@@ -687,6 +744,19 @@ public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
 - [ ] 콘솔에서 Tool 호출 로그 확인됨
 - [ ] LLM이 적절한 Tool을 선택함
 - [ ] 파라미터가 올바르게 추출됨
+
+---
+
+## 요약
+
+이번 단계에서는 LLM이 자바 메서드를 직접 호출하는 Function Calling을 구현했습니다:
+
+1. **@Tool annotation**: `@Tool(description=...)`로 LLM이 호출할 수 있는 메서드를 정의하고, `@ToolParam(description=...)`으로 각 매개변수의 의미를 LLM에게 설명했습니다
+2. **Tool 등록**: ChatClient.Builder의 `defaultTools()` 메서드로 Tool Bean을 등록하여 Function Calling을 활성화했습니다
+3. **LLM의 추론 과정**: LLM이 사용자의 자연어 질문을 분석하여 어떤 Tool을 호출할지, 어떤 파라미터를 넘길지 스스로 결정하는 과정을 이해했습니다
+4. **description의 중요성**: Tool과 파라미터의 description이 명확해야 LLM이 정확하게 Tool을 선택하고 파라미터를 추출한다는 것을 배웠습니다
+
+다음 단계에서는 Function Calling의 실행 과정을 모니터링하고 디버깅하는 "Tool Callback"을 배우겠습니다.
 
 ---
 

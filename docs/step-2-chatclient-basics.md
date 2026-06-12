@@ -1,13 +1,44 @@
 # Step 2: ChatClient 기초와 LLM 연동
 
 ## 학습 목표
-이 단계에서는 Spring AI의 **ChatClient**를 사용하여 LLM과 대화하는 방법을 학습합니다.
 
-**학습 완료 후 할 수 있는 것:**
-- ChatClient로 간단한 질문-답변 구현
-- Ollama와 Gemini 모델 선택적으로 사용
-- ChatClient.Builder로 ChatClient 생성
-- ChatModel 빈 주입 및 설정
+이 단계를 마치면 다음을 할 수 있습니다:
+
+- Spring AI의 `ChatClient`를 사용하여 LLM과 간단한 질문-답변을 구현할 수 있습니다
+- `@Configuration` 클래스에서 `ChatClient.Builder`를 Bean으로 등록할 수 있습니다
+- `@Qualifier`와 `@Primary`를 활용하여 Ollama와 Gemini를 선택적으로 사용할 수 있습니다
+- Controller에서 사용자의 질문을 받아 LLM의 답변을 반환하는 전체 흐름을 이해할 수 있습니다
+
+---
+
+> **핵심 개념**: ChatClient는 Spring AI에서 LLM과 대화하기 위한 통일된 API입니다. 쉽게 말해, `RestTemplate`이나 `WebClient`로 외부 API를 호출하듯, ChatClient로 AI 모델을 호출한다고 생각하면 됩니다. Ollama든 Gemini든 ChatClient 하나로 동일한 코드로 대화할 수 있다는 것이 핵심입니다.
+
+---
+
+## 전체 흐름
+
+이번 단계에서 구현할 전체 흐름은 다음과 같습니다:
+
+```
+[사용자] --HTTP 요청--> [@RestController]
+                              ↓
+                    [@Service (SimpleChatService)]
+                              ↓
+                    [ChatClient.prompt().user("질문").call().content()]
+                              ↓
+                    [ChatModel (Ollama 또는 Gemini)]
+                              ↓
+                    [AI 모델이 응답 생성]
+                              ↓
+                    [사용자에게 응답 전달]
+```
+
+기존 Spring Boot의 Controller -> Service -> Repository 구조와 비교하면, Repository 대신 ChatClient가 들어간 형태입니다:
+
+```
+기존: [Controller] → [Service] → [Repository] → [Database]
+AI:   [Controller] → [Service] → [ChatClient] → [AI 모델(LLM)]
+```
 
 ---
 
@@ -131,6 +162,14 @@ ChatClient client2 = builder.defaultSystem("다른 역할").build();
 ---
 
 ## Step 2-1: ChatClientConfig 설정
+
+### 왜 이렇게 할까요?
+
+Step 1에서 `application.yml`에 Ollama와 Gemini 설정을 추가했습니다. Spring AI는 이 설정을 읽어서 자동으로 `OllamaChatModel`과 `GoogleGenAiChatModel`이라는 Bean을 생성합니다. 하지만 우리가 Service에서 직접 사용할 `ChatClient`는 아직 존재하지 않습니다. 따라서 `@Configuration` 클래스에서 `ChatClient.Builder`를 Bean으로 등록하여, 다른 클래스에서 `ChatClient`를 주입받아 사용할 수 있게 만들어야 합니다.
+
+기존 Spring Boot에서 데이터베이스 설정을 `DataSourceConfig` 클래스에서 했던 것과 동일한 패턴입니다. Spring AI에서는 AI 모델 설정을 `ChatClientConfig` 클래스에서 합니다.
+
+> **Spring Boot 복습**: `@Configuration` 클래스는 Spring 컨테이너에 Bean을 수동으로 등록할 때 사용합니다. 외부 라이브러리의 객체(SimpleClient 등)는 `@Component`를 붙일 수 없으므로, `@Bean` 메서드로 직접 생성하여 등록합니다. 여기서도 `ChatClient.Builder`는 Spring AI 라이브러리의 객체이므로 `@Bean`으로 등록합니다.
 
 먼저 두 가지 LLM(Ollama, Gemini)을 선택적으로 사용할 수 있도록 설정 클래스를 만듭니다.
 
@@ -257,6 +296,14 @@ public ChatClient.Builder ollamaChatClientBuilder(...) { ... }
 ---
 
 ##  Step 2-2: 첫 번째 대화 서비스 구현
+
+### 왜 이렇게 할까요?
+
+지금까지 데이터베이스에서 데이터를 조회할 때 `UserService`가 `UserRepository`를 주입받아 사용했던 것을 떠올려 보세요. AI 모델과 대화할 때도 동일한 패턴을 사용합니다. `SimpleChatService`가 `ChatClient`를 주입받아 사용자의 질문을 AI 모델에 전달하고 답변을 받아옵니다.
+
+Controller에서 직접 ChatClient를 호출해도 되지만, Service 계층을 분리하면 비즈니스 로직(예: 질문 전처리, 응답 후처리)을 한 곳에서 관리할 수 있어 유지보수가 쉬워집니다. 이것은 Spring Boot에서 배운 "관심사의 분리(Separation of Concerns)" 원칙과 동일합니다.
+
+> **Spring Boot 복습**: `@Service`는 `@Component`의 특수화 버전으로, 비즈니스 로직을 담당하는 클래스에 붙입니다. 생성자 주입(Constructor Injection)을 사용하면 `final` 필드로 불변성을 보장할 수 있습니다. Spring 4.3부터는 생성자가 하나뿐이면 `@Autowired`를 생략할 수 있습니다.
 
 ### SimpleChatService.java 생성
 
@@ -399,6 +446,14 @@ ChatClient.prompt()
 ---
 
 ## Step 2-3: 테스트 컨트롤러 구현
+
+### 왜 이렇게 할까요?
+
+Service 계층을 만들었지만, 사용자가 직접 자바 코드를 실행할 수는 없습니다. HTTP 요청을 받아 Service를 호출하고 결과를 반환하는 Controller가 필요합니다. 이것은 여러분이 이미 알고 있는 `@RestController`의 역할과 완전히 동일합니다.
+
+여기서는 응답 시간을 함께 출력하도록 구현합니다. Ollama와 Gemini의 속도 차이를 직접 체감해 보는 것이 학습에 도움이 되기 때문입니다.
+
+> **Spring Boot 복습**: `@RestController`는 `@Controller` + `@ResponseBody`의 조합으로, 메서드 반환값을 JSON(또는 String)으로 자동 변환합니다. `@GetMapping`은 HTTP GET 요청을 매핑하고, `@RequestParam`은 쿼리 파라미터를 메서드 파라미터로 주입합니다.
 
 ### ChatTestController.java 생성
 
@@ -667,6 +722,19 @@ chatClient
 - [ ] Gemini로 질문-답변이 동작함
 - [ ] 응답 시간 차이를 확인함 (Ollama vs Gemini)
 - [ ] 콘솔에서 Spring AI 로그 확인됨
+
+---
+
+## 요약
+
+이번 단계에서는 Spring AI의 ChatClient를 사용하여 LLM과 대화하는 전체 흐름을 구현했습니다:
+
+1. **ChatClientConfig**: `@Configuration` 클래스에서 `ChatClient.Builder`를 Bean으로 등록하여, Service에서 ChatClient를 주입받을 수 있게 했습니다
+2. **SimpleChatService**: `@Service`에서 ChatClient를 사용해 `prompt().user().call().content()`로 간단하게 LLM과 대화했습니다
+3. **ChatTestController**: `@RestController`에서 사용자의 HTTP 요청을 받아 Service를 호출하고 결과를 반환했습니다
+4. **핵심 인사이트**: Ollama와 Gemini 모두 동일한 ChatClient API로 사용할 수 있어, 모델을 교체해도 코드 변경이 거의 없습니다
+
+다음 단계에서는 LLM이 자바 메서드를 직접 호출할 수 있는 "Function Calling" 기능을 배우겠습니다.
 
 ---
 

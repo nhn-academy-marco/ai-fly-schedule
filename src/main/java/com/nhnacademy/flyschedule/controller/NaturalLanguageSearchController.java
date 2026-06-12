@@ -1,5 +1,6 @@
 package com.nhnacademy.flyschedule.controller;
 
+import com.nhnacademy.flyschedule.dto.response.A2ASearchResponse;
 import com.nhnacademy.flyschedule.service.ai.A2ANaturalLanguageService;
 import com.nhnacademy.flyschedule.service.orchestration.NaturalLanguageOrchestrationService;
 import lombok.RequiredArgsConstructor;
@@ -59,29 +60,20 @@ public class NaturalLanguageSearchController {
      * LLM이 직접 MCP Tools를 선택하고 호출합니다.
      *
      * @param request 검색 요청 (message, model - optional, "ollama" or "gemini")
-     * @return 검색 결과
+     * @return 검색 결과 DTO
      */
     @PostMapping("/search/a2a")
-    public Map<String, Object> searchByA2A(@RequestBody Map<String, String> request) {
+    public A2ASearchResponse searchByA2A(@RequestBody Map<String, String> request) {
         String message = request.get("message");
         if (message == null || message.isBlank()) {
-            return error("메시지를 입력해주세요.");
+            return A2ASearchResponse.fail("메시지를 입력해주세요.");
         }
 
-        // 모델 선택 (기본: ollama)
         String model = request.getOrDefault("model", "ollama");
 
         log.info("자연어 검색 요청 (A2A 방식, model={}): {}", model, message);
 
-        try {
-            // A2A 방식: LLM이 직접 Tools 선택
-            Map<String, Object> result = a2aService.searchAndParse(message, model);
-            return result;
-
-        } catch (Exception e) {
-            log.error("A2A 검색 실패", e);
-            return error("검색 실패: " + e.getMessage());
-        }
+        return a2aService.searchAndParse(message, model);
     }
 
     /**

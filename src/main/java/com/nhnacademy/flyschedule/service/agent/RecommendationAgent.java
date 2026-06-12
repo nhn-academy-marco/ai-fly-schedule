@@ -74,6 +74,10 @@ public class RecommendationAgent {
         FlightInfoResponse mostExpensive = priceFilterAgent.findMostExpensive(flights);
         double avgPrice = priceFilterAgent.calculateAveragePrice(flights);
 
+        if (cheapest == null || mostExpensive == null) {
+            return "가격 정보가 있는 항공편이 없습니다.";
+        }
+
         String sb = "가격 분석 결과:\n" +
                 String.format("- 최저가: %s (%,d원)\n",
                         cheapest.getFlightId(), cheapest.getEconomyCharge()) +
@@ -92,6 +96,10 @@ public class RecommendationAgent {
     private String generateOptimalRecommendation(List<FlightInfoResponse> flights) {
         // 가성비 추천: 가장 저렴하면서 적절한 시간대
         FlightInfoResponse cheapest = priceFilterAgent.findCheapest(flights);
+
+        if (cheapest == null) {
+            return "가격 정보가 있는 항공편이 없습니다.";
+        }
 
         return String.format("추천 항공편: %s (%s)\n" +
                         "가격: %,d원\n" +
@@ -123,6 +131,10 @@ public class RecommendationAgent {
      */
     private String generateBasicRecommendation(List<FlightInfoResponse> flights) {
         FlightInfoResponse cheapest = priceFilterAgent.findCheapest(flights);
+
+        if (cheapest == null) {
+            return "가격 정보가 있는 항공편이 없습니다.";
+        }
 
         return String.format("추천 항공편: %s (%s)\n" +
                         "가격: %,d원\n" +

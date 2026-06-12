@@ -70,6 +70,7 @@ public class FlightSearchTool {
                 limitedFlights.size(),
                 limitedFlights.values().stream().mapToInt(List::size).sum());
 
+        ToolResultCapture.capture("searchFlightsByAirline", limitedFlights);
         return limitedFlights;
     }
 
@@ -103,7 +104,10 @@ public class FlightSearchTool {
                 departure, arrival, date, afterTime);
 
         // A2A: Coordinator → TimeFilterAgent → FlightSearchAgent → GroupingAgent
-        return flightSearchAgent.searchWithTimeFilter(departure, arrival, date, afterTime);
+        Map<String, List<FlightInfoResponse>> result =
+                flightSearchAgent.searchWithTimeFilter(departure, arrival, date, afterTime);
+        ToolResultCapture.capture("searchFlightsAfterTime", result);
+        return result;
     }
 
     /**
@@ -138,6 +142,9 @@ public class FlightSearchTool {
                 departure, arrival, date, minPrice, maxPrice);
 
         // A2A: Coordinator → PriceFilterAgent → FlightSearchAgent → GroupingAgent
-        return flightSearchAgent.searchWithPriceFilter(departure, arrival, date, minPrice, maxPrice);
+        Map<String, List<FlightInfoResponse>> result =
+                flightSearchAgent.searchWithPriceFilter(departure, arrival, date, minPrice, maxPrice);
+        ToolResultCapture.capture("searchFlightsByPriceRange", result);
+        return result;
     }
 }

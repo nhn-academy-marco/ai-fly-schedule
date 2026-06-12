@@ -240,13 +240,18 @@ public class ReasoningAgent {
     // 헬퍼 메서드
     private String extractAirport(String query, boolean isDeparture) {
         String[] airports = {"광주", "김포", "김해", "제주", "대구", "청주", "인천", "부산", "여수", "양양"};
+        List<String> found = new ArrayList<>();
         for (String airport : airports) {
-            if (query.contains(airport)) {
-                // 더 간단한 로직: 첫 번째 공항을 출발, 두 번째를 도착으로 처리
-                return airport;
+            if (query.contains(airport) && !found.contains(airport)) {
+                found.add(airport);
             }
         }
-        return isDeparture ? "광주" : "제주"; // 기본값
+        if (found.size() >= 2) {
+            return isDeparture ? found.get(0) : found.get(1);
+        } else if (found.size() == 1) {
+            return found.get(0);
+        }
+        return isDeparture ? "광주" : "제주";
     }
 
     private String extractDate(String query) {

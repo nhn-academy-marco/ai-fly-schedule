@@ -38,6 +38,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleException(Exception e) {
+        if (e instanceof org.springframework.web.servlet.resource.NoResourceFoundException) {
+            return null;
+        }
         log.error("서버 에러", e);
         return ApiResponse.error("서버 오류가 발생했습니다: " + e.getMessage());
     }

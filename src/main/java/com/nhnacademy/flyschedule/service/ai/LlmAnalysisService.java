@@ -100,7 +100,7 @@ public class LlmAnalysisService {
             2. 날짜는 반드시 YYYY-MM-DD 형식으로 변환
             3. 시간은 24시간제 HH:MM 형식
             4. "내일", "모레" 등 상대적 날짜 표현은 오늘 날짜를 기준으로 계산하여 YYYY-MM-DD로 변환
-            5. 오늘 날짜: 2026-03-10
+            5. 오늘 날짜: %s
             6. "오후 3시", "14시" 등의 표현은 HH:MM으로 변환
             7. **중요: 공항은 반드시 한글 이름(광주, 김포, 제주 등)만 사용하고, 공항 코드(NAARKJJ 등)는 절대 사용하지 마세요**
 
@@ -121,7 +121,7 @@ public class LlmAnalysisService {
 
             ## 사용자 메시지
             %s
-            """, message);
+            """, LocalDate.now(), message);
     }
 
     /**

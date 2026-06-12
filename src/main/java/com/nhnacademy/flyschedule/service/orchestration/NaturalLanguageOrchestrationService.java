@@ -126,16 +126,16 @@ public class NaturalLanguageOrchestrationService {
      * FlightInfoResponse를 Map으로 변환
      */
     private Map<String, Object> convertToMap(FlightInfoResponse flight) {
-        return Map.of(
-            "vihicleId", flight.getFlightId(),
-            "airlineNm", flight.getAirlineName(),
-            "depPlandTime", flight.getDepartureTime(),
-            "arrPlandTime", flight.getArrivalTime(),
-            "economyCharge", flight.getEconomyCharge(),
-            "prestigeCharge", flight.getPrestigeCharge(),
-            "depAirportNm", flight.getDepartureAirport(),
-            "arrAirportNm", flight.getArrivalAirport()
-        );
+        Map<String, Object> map = new HashMap<>();
+        map.put("vihicleId", flight.getFlightId());
+        map.put("airlineNm", flight.getAirlineName());
+        map.put("depPlandTime", flight.getDepartureTime());
+        map.put("arrPlandTime", flight.getArrivalTime());
+        map.put("economyCharge", flight.getEconomyCharge());
+        map.put("prestigeCharge", flight.getPrestigeCharge());
+        map.put("depAirportNm", flight.getDepartureAirport());
+        map.put("arrAirportNm", flight.getArrivalAirport());
+        return map;
     }
 
     /**

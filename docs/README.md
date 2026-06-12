@@ -32,14 +32,14 @@
 
 ## 4주 완성 Step별 학습 경로
 
-이 프로젝트는 **11개의 Step**으로 구성된 단계별 교재입니다.
+이 프로젝트는 **10개의 Step**으로 구성된 단계별 교재입니다.
 
 | 주차 | Step | 주제 | 학습 시간 |
 |------|------|------|----------|
 | **1주차**| Step 1-2 | Spring AI 기초 | 7-9시간 |
 | **2주차**| Step 3-5 | Function Calling & MCP Tool | 13-16시간 |
 | **3주차**| Step 6-8 | 항공편 Tool & A2A 기초 | 13-17시간 |
-| **4주차**| Step 9-11 | A2A 심화 & 배포 | 15-19시간 |
+| **4주차**| Step 9-10 | A2A 심화 | 10-13시간 |
 
 ---
 
@@ -48,10 +48,10 @@
 ### Step 1: Spring AI 환경 설정
 **[step-1-spring-ai-settings.md](./step-1-spring-ai-settings.md)**
 
-- Spring AI 1.1.4 의존성 설정
-- Ollama 로컬 LLM 연동
-- Google Gemini API 연동
-- application.yml을 통한 LLM 설정
+- Spring AI 1.1.4 의존성 설정 (BOM 관리)
+- Ollama 로컬/원격 LLM 연동 (Qwen 2.5)
+- Google Gemini API 연동 (Gemini 2.5 Flash)
+- application.yml을 통한 LLM 설정 (모델, 파라미터, 타임아웃)
 
 ---
 
@@ -146,29 +146,19 @@
 
 ---
 
-### Step 11: 테스트와 배포
-**[step-11-testing-deployment.md](./step-11-testing-deployment.md)**
-
-- Spring AI 단위 테스트 작성
-- 통합 테스트 구현
-- LLM 호출 Mock 처리
-- Docker를 이용한 배포
-
----
-
 ## 학습 목표
 
 이 프로젝트를 통해 다음을 학습할 수 있습니다:
 
 ### 기본 기능
--  **Spring AI 1.1.2**: 최신 Spring AI 프레임워크 활용
+-  **Spring AI 1.1.4**: 최신 Spring AI 프레임워크 활용
 -  **ChatClient & ChatModel**: LLM과 대화하는 인터페이스
 -  **Function Calling**: LLM이 자바 메서드를 호출
 -  **MCP Tool**: AI 모델이 사용할 수 있는 도구 구현
 -  **A2A 오케스트레이션**: 전문화된 에이전트 간 협업
 -  **RestClient**: Spring 6.1+ Modern HTTP Client
 
-### Spring AI 1.1.2 핵심 기술
+### Spring AI 1.1.4 핵심 기술
 -  **@Tool / @ToolParam**: 공식 Spring AI Tool Annotation
 -  **ToolCallingCallback**: Function Calling 실행 과정 모니터링
 -  **다중 LLM 지원**: Ollama, Gemini 동시 사용
@@ -258,7 +248,7 @@
 
 ### 핵심 기술
 - **Java 21**
-- **Spring Boot 3.3**(Spring AI 1.1.2 호환)
+- **Spring Boot 3.5**(Spring AI 1.1.4 호환)
 - **Spring Web MVC**
 - **RestClient**(Spring 6.1+ Modern HTTP Client)
 - **Thymeleaf**(템플릿 엔진)
@@ -267,9 +257,9 @@
 
 ### AI/LLM
 - **Ollama**- 로컬/원격 LLM 서버
-- **Qwen 2.5**- 자연어 분석 모델
+- **Qwen 2.5 (qwen2.5:3b-instruct-q4_K_M)**- 자연어 분석 모델
 - **Gemini 2.5 Flash**- Google GenAI API
-- **Spring AI 1.1.2**- AI 통합 프레임워크
+- **Spring AI 1.1.4**- AI 통합 프레임워크
 
 ### Spring AI 핵심 기능
 - **@Tool / @ToolParam**: 공식 Spring AI Tool Annotation

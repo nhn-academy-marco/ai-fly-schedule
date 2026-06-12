@@ -1,30 +1,30 @@
 # Step 4: Tool Callback과 실행 과정 이해
 
 ## 학습 목표
-이 단계에서는 **Tool Calling Callback**을 사용하여 Function Calling의 실행 과정을 모니터링하고 디버깅하는 방법을 학습합니다.
+이 단계에서는 **ChatClient Advisor**를 사용하여 Function Calling의 실행 과정을 모니터링하고 디버깅하는 방법을 학습합니다.
 
 **학습 완료 후 할 수 있는 것:**
-- `ToolCallingCallback` 구현
-- Function Calling 실행 과정 로깅
-- LLM의 Tool 선택 과정 이해
+- `SimpleLoggerAdvisor`로 실행 과정 로깅
+- Function Calling 실행 과정 이해
+- LLM의 Tool 선택 과정 확인
 - 디버깅 및 성능 최적화
 
 ---
 
-## Tool Calling Callback이란?
+## ChatClient Advisor란?
 
-**Tool Calling Callback**은 Function Calling의 **모든 단계**를 가로채서 로깅, 모니터링, 수정할 수 있는 인터페이스입니다.
+**ChatClient Advisor**는 ChatClient의 요청/응답 과정에 개입하여 로깅, 수정, 모니터링할 수 있는 메커니즘입니다.
 
-### Callback이 필요한 이유
+### Advisor가 필요한 이유
 
 | 이유 | 설명 | 예시 |
 |------|------|------|
 | **디버깅**| LLM이 어떤 Tool을 선택했는지 확인 | "왜 다른 Tool이 호출되었지?" |
-| **성능 모니터링**| 각 Tool의 실행 시간 측정 | "이 Tool이 너무 느려" |
+| **성능 모니터링**| 각 단계의 실행 시간 측정 | "이 Tool이 너무 느려" |
 | **보안 로깅**| 어떤 파라미터로 호출되었는지 기록 | "민감 정보가 노출되었나?" |
-| **결과 수정**| Tool 실행 결과를 가공 | "응답이 너무 길어서 줄여야겠어" |
+| **요청/응답 수정**| 프롬프트나 결과를 가공 | "응답이 너무 길어서 줄여야겠어" |
 
-### Callback 실행 타이밍
+### Advisor 실행 타이밍
 
 ```
 ┌───────────────────────────────────────────────────────────┐
@@ -33,316 +33,221 @@
 └───────────────────────────────────────────────────────────┘
                     ↓
 ┌───────────────────────────────────────────────────────────┐
-│  Callback: onRequest()                                    │
-│  - 사용자 요청 로깅                                        │
+│  Advisor: 요청 로깅                                       │
+│  - 사용자 요청 기록                                        │
 └───────────────────────────────────────────────────────────┘
                     ↓
 ┌───────────────────────────────────────────────────────────┐
 │  LLM 분석 및 Tool 선택                                     │
-│  → searchFlightsByAirline 선택                            │
-└───────────────────────────────────────────────────────────┘
-                    ↓
-┌───────────────────────────────────────────────────────────┐
-│  Callback: beforeToolCall()                               │
-│  - Tool 이름 로깅                                          │
-│  - 파라미터 로깅                                           │
-│  - 시작 시간 기록                                          │
+│  → FlightSearchTool 선택                                  │
 └───────────────────────────────────────────────────────────┘
                     ↓
 ┌───────────────────────────────────────────────────────────┐
 │  Tool 실행                                                 │
-│  searchFlightsByAirline("광주", "제주", "내일")            │
+│  FlightSearchTool.search("광주", "제주", "내일")           │
 └───────────────────────────────────────────────────────────┘
                     ↓
 ┌───────────────────────────────────────────────────────────┐
-│  Callback: afterToolCall()                                │
-│  - 실행 결과 로깅                                          │
-│  - 실행 시간 계산                                          │
-│  - 결과 가공 (선택)                                        │
-└───────────────────────────────────────────────────────────┘
-                    ↓
-┌───────────────────────────────────────────────────────────┐
-│  Callback: onResponse()                                   │
-│  - 최종 응답 로깅                                          │
-│  - 전체 실행 시간 계산                                     │
+│  Advisor: 응답 로깅                                       │
+│  - Tool 실행 결과 기록                                     │
+│  - 최종 응답 내용 기록                                     │
 └───────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Step 4-1: LoggingCallback 구현
+## Step 4-1: SimpleLoggerAdvisor 적용
 
-### LoggingCallback.java 생성
+### ChatClientConfig에 SimpleLoggerAdvisor 추가
 
 ```java
 package com.nhnacademy.flyschedule.config;
 
-import org.springframework.ai.chat.client.advisor.CallAroundAdvisor;
-import org.springframework.ai.chat.client.advisor.CallAroundAdvisorChain;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.ChatResponseMetadata;
-import org.springframework.ai.chat.model.Generation;
+import com.nhnacademy.flyschedule.mcp.AirlineInfoTool;
+import com.nhnacademy.flyschedule.mcp.AirportInfoTool;
+import com.nhnacademy.flyschedule.mcp.FlightSearchTool;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
-import org.springframework.ai.chat.messages.Message;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
-
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
-/**
- * Tool Calling 실행 과정을 로깅하는 Callback
- *
- * Spring AI 1.1.2의 ToolCallingCallback을 사용하여
- * Function Calling의 모든 단계를 모니터링합니다.
- */
-@Component
-public class LoggingCallback {
-
-    private static final Logger log = LoggerFactory.getLogger(LoggingCallback.class);
-
-    // 각 Tool의 실행 시간을 저장
-    private final Map<String, Long> toolExecutionTimes = new ConcurrentHashMap<>();
-
-    /**
-     * Tool 호출 전 실행되는 메서드
-     *
-     * @param toolName Tool 이름
-     * @param arguments Tool 파라미터
-     */
-    public void beforeToolCall(String toolName, Map<String, Object> arguments) {
-        log.info("========================================");
-        log.info(" Tool 호출 시작");
-        log.info("Tool 이름: {}", toolName);
-        log.info("파라미터: {}", arguments);
-        log.info("========================================");
-
-        toolExecutionTimes.put(toolName, System.currentTimeMillis());
-    }
-
-    /**
-     * Tool 호출 후 실행되는 메서드
-     *
-     * @param toolName Tool 이름
-     * @param result Tool 실행 결과
-     */
-    public void afterToolCall(String toolName, Object result) {
-        Long startTime = toolExecutionTimes.get(toolName);
-        long duration = startTime != null
-                ? System.currentTimeMillis() - startTime
-                : 0;
-
-        log.info("========================================");
-        log.info(" Tool 호출 완료");
-        log.info("Tool 이름: {}", toolName);
-        log.info("실행 시간: {}ms", duration);
-        log.info("결과 타입: {}", result != null ? result.getClass().getSimpleName() : "null");
-
-        // 결과가 너무 크면 요약해서 로깅
-        if (result != null) {
-            String resultStr = result.toString();
-            if (resultStr.length() > 500) {
-                log.info("결과 (요약): {}... (총 {}글자)",
-                        resultStr.substring(0, 500), resultStr.length());
-            } else {
-                log.info("결과: {}", resultStr);
-            }
-        }
-        log.info("========================================");
-
-        toolExecutionTimes.remove(toolName);
-    }
-
-    /**
-     * LLM 응답 생성 후 실행되는 메서드
-     *
-     * @param request 사용자 요청
-     * @param response LLM 응답
-     * @param duration 전체 실행 시간
-     */
-    public void onResponse(String request, ChatResponse response, long duration) {
-        log.info("========================================");
-        log.info(" LLM 응답 생성 완료");
-        log.info("요청: {}", request);
-        log.info("전체 실행 시간: {}ms ({}초)", duration, duration / 1000.0);
-
-        // Tool 호출 횟수 확인
-        if (response != null && response.getMetadata() != null) {
-            ChatResponseMetadata metadata = response.getMetadata();
-            log.info("모델: {}", metadata.getModel());
-            log.info("토큰 사용량: {}", metadata.getUsage());
-        }
-
-        // 생성된 응답
-        if (response != null && !response.getResults().isEmpty()) {
-            Generation generation = response.getResults().get(0);
-            String content = generation.getOutput().getContent();
-            log.info("응답: {}", content);
-        }
-        log.info("========================================");
-    }
-}
-```
-
----
-
-## Step 4-2: ChatClient에 Callback 등록
-
-### ChatClientConfig 수정
-
-```java
-package com.nhnacademy.flyschedule.config;
-
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+/**
+ * ChatClient Configuration for Spring AI
+ */
 @Configuration
 public class ChatClientConfig {
 
-    private final LoggingCallback loggingCallback;
-
-    public ChatClientConfig(LoggingCallback loggingCallback) {
-        this.loggingCallback = loggingCallback;
-    }
-
+    /**
+     * Ollama ChatClient.Builder (기본)
+     */
     @Bean
     @Primary
     public ChatClient.Builder ollamaChatClientBuilder(
             @Qualifier("ollamaChatModel") ChatModel ollamaChatModel,
-            Object[] tools) {
+            FlightSearchTool flightSearchTool,
+            AirportInfoTool airportInfoTool,
+            AirlineInfoTool airlineInfoTool) {
 
         return ChatClient.builder(ollamaChatModel)
-                .defaultTools(tools)
-                .defaultAdvisors(
-                        new SimpleLoggerAdvisor()  // 기본 로깅 어드바이저
-                );
+                .defaultTools(flightSearchTool, airportInfoTool, airlineInfoTool)
+                .defaultAdvisors(new SimpleLoggerAdvisor());  // 로깅 어드바이저 추가
     }
 }
+```
+
+### SimpleLoggerAdvisor가 로깅하는 정보
+
+```
+DEBUG o.s.a.chat.client.advisor.SimpleLoggerAdvisor :
+>> request: user text: "내일 광주에서 제주로 가는 항공편 알려줘"
+
+DEBUG o.s.a.chat.client.advisor.SimpleLoggerAdvisor :
+<< chat response: "네, 내일 광주에서 제주로 가는 항공편을 찾았어요..."
 ```
 
 ---
 
-## Step 4-3: Callback이 포함된 서비스
+## Step 4-2: Tool 실행 로그 확인
 
-### MonitoredChatService.java
+### application.yml 로그 설정
 
-```java
-package com.nhnacademy.flyschedule.service;
-
-import com.nhnacademy.flyschedule.config.LoggingCallback;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.stereotype.Service;
-
-@Service
-public class MonitoredChatService {
-
-    private final ChatClient chatClient;
-    private final LoggingCallback loggingCallback;
-
-    public MonitoredChatService(
-            ChatClient.Builder chatClientBuilder,
-            LoggingCallback loggingCallback) {
-
-        this.chatClient = chatClientBuilder.build();
-        this.loggingCallback = loggingCallback;
-    }
-
-    /**
-     * Function Calling with Callback
-     */
-    public String chatWithMonitoring(String userMessage) {
-        long startTime = System.currentTimeMillis();
-
-        // Callback: onRequest 단계
-        loggingCallback.beforeRequest(userMessage);
-
-        // LLM 호출
-        ChatResponse response = chatClient.prompt()
-                .user(userMessage)
-                .call()
-                .chatResponse();
-
-        long duration = System.currentTimeMillis() - startTime;
-
-        // Callback: onResponse 단계
-        loggingCallback.onResponse(userMessage, response, duration);
-
-        return response.getResult().getOutput().getContent();
-    }
-}
-```
-
----
-
-## Step 4-4: Callback 테스트
-
-### CallbackTestController.java
-
-```java
-package com.nhnacademy.flyschedule.controller;
-
-import com.nhnacademy.flyschedule.service.MonitoredChatService;
-import org.springframework.web.bind.annotation.*;
-
-@RestController
-@RequestMapping("/api/callback")
-public class CallbackTestController {
-
-    private final MonitoredChatService chatService;
-
-    public CallbackTestController(MonitoredChatService chatService) {
-        this.chatService = chatService;
-    }
-
-    /**
-     * Callback 테스트
-     * GET /api/callback/test?message=내일광주에서제주로가는항공편알려줘
-     */
-    @GetMapping("/test")
-    public String testCallback(@RequestParam String message) {
-        return chatService.chatWithMonitoring(message);
-    }
-}
-```
-
-### 테스트 실행
-
-```bash
-curl "http://localhost:8080/api/callback/test?message=내일광주에서제주로가는항공편알려줘"
+```yaml
+logging:
+  level:
+    org.springframework.ai: DEBUG
+    com.nhnacademy.flyschedule: DEBUG
 ```
 
 ### 콘솔 로그 예시
 
 ```
+DEBUG o.s.a.c.client.advisor.SimpleLoggerAdvisor :
+>> request: user text: "내일 광주에서 제주로 가는 항공편 알려줘"
+
+INFO  c.n.f.mcp.FlightSearchTool     : 항공편 검색 시작: 광주 -> 제주 (내일)
+INFO  c.n.f.mcp.FlightSearchTool     : 항공편 6편 검색 완료
+
+DEBUG o.s.a.c.client.advisor.SimpleLoggerAdvisor :
+<< chat response: "네, 내일 광주에서 제주로 가는 항공편을 찾았어요..."
+```
+
+---
+
+## Step 4-3: 사용자 정의 로깅이 필요한 경우
+
+### CustomLoggingAdvisor 구현
+
+```java
+package com.nhnacademy.flyschedule.config;
+
+import org.springframework.ai.chat.client.advisor.api.CallAroundAdvisor;
+import org.springframework.ai.chat.client.advisor.api.CallAroundAdvisorChain;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 사용자 정의 로깅 어드바이저
+ */
+@Component
+public class CustomLoggingAdvisor implements CallAroundAdvisor {
+
+    private static final Logger log = LoggerFactory.getLogger(CustomLoggingAdvisor.class);
+
+    private final Map<String, Long> startTimeMap = new HashMap<>();
+
+    @Override
+    public String getName() {
+        return "CustomLoggingAdvisor";
+    }
+
+    @Override
+    public ChatResponse aroundCall(
+            UserMessage userMessage,
+            ChatOptions options,
+            CallAroundAdvisorChain chain) {
+
+        String requestId = java.util.UUID.randomUUID().toString().substring(0, 8);
+        startTimeMap.put(requestId, System.currentTimeMillis());
+
+        log.info("========================================");
+        log.info("요청 ID: {}", requestId);
+        log.info("사용자 요청: {}", userMessage.getContent());
+        log.info("========================================");
+
+        try {
+            ChatResponse response = chain.nextAroundCall(userMessage, options);
+
+            long duration = System.currentTimeMillis() - startTimeMap.get(requestId);
+
+            log.info("========================================");
+            log.info("응답 ID: {}", requestId);
+            log.info("전체 실행 시간: {}ms", duration);
+            log.info("응답 내용: {}", response.getResult().getOutput().getContent());
+            log.info("========================================");
+
+            return response;
+
+        } finally {
+            startTimeMap.remove(requestId);
+        }
+    }
+}
+```
+
+### ChatClientConfig에 Custom Advisor 등록
+
+```java
+return ChatClient.builder(ollamaChatModel)
+        .defaultTools(flightSearchTool, airportInfoTool, airlineInfoTool)
+        .defaultAdvisors(
+                new SimpleLoggerAdvisor(),
+                customLoggingAdvisor  // 사용자 정의 어드바이저
+        );
+```
+
+---
+
+## Step 4-4: 테스트
+
+### 기존 컨트롤러로 테스트
+
+프로젝트에 이미 구현된 `NaturalLanguageSearchController`를 사용합니다:
+
+```bash
+curl "http://localhost:8080/api/search/natural?query=내일광주에서제주로가는항공편알려줘"
+```
+
+### 콘솔에서 확인되는 로그
+
+```
 ========================================
- Tool 호출 시작
-Tool 이름: searchFlightsByAirline
-파라미터: {departure=광주, arrival=제주, date=내일}
+요청 ID: a1b2c3d4
+사용자 요청: 내일광주에서제주로가는항공편알려줘
 ========================================
-INFO  c.n.f.service.FlightSearchAgent    : 항공편 검색 시작: 광주 -> 제주 (내일)
-INFO  c.n.f.service.FlightSearchAgent    : 항공편 6편 검색 완료
+
+DEBUG o.s.a.c.client.advisor.SimpleLoggerAdvisor :
+>> request: user text: "내일광주에서제주로가는항공편알려줘"
+
+INFO  c.n.f.mcp.FlightSearchTool     : 항공편 검색 시작: 광주 -> 제주 (내일)
+INFO  c.n.f.mcp.FlightSearchTool     : 항공편 6편 검색 완료
+
+DEBUG o.s.a.c.client.advisor.SimpleLoggerAdvisor :
+<< chat response: "네, 내일 광주에서 제주로 가는 항공편을 찾았어요..."
+
 ========================================
- Tool 호출 완료
-Tool 이름: searchFlightsByAirline
-실행 시간: 2345ms
-결과 타입: LinkedHashMap
-결과 (요약): {아시아나항공=[FlightInfoResponse(...)], 제주항공=[...]}
-========================================
-========================================
- LLM 응답 생성 완료
-요청: 내일광주에서제주로가는항공편알려줘
-전체 실행 시간: 5234ms (5.234초)
-모델: qwen2.5:latest
-응답: 네, 내일 광주에서 제주로 가는 항공편을 찾았어요...
+응답 ID: a1b2c3d4
+전체 실행 시간: 5234ms
+응답 내용: 네, 내일 광주에서 제주로 가는 항공편을 찾았어요...
 ========================================
 ```
 
@@ -350,11 +255,16 @@ Tool 이름: searchFlightsByAirline
 
 ## Step 4-5: 성능 모니터링
 
-### PerformanceMonitor 구현
+### PerformanceMonitoringAdvisor 구현
 
 ```java
-package com.nhnacademy.flyschedule.monitor;
+package com.nhnacademy.flyschedule.config;
 
+import org.springframework.ai.chat.client.advisor.api.CallAroundAdvisor;
+import org.springframework.ai.chat.client.advisor.api.CallAroundAdvisorChain;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -364,175 +274,215 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Tool 성능 모니터링
+ * 성능 모니터링 어드바이저
  */
 @Component
-public class PerformanceMonitor {
+public class PerformanceMonitoringAdvisor implements CallAroundAdvisor {
 
-    private static final Logger log = LoggerFactory.getLogger(PerformanceMonitor.class);
+    private static final Logger log = LoggerFactory.getLogger(PerformanceMonitoringAdvisor.class);
 
-    // Tool별 호출 횟수
     private final ConcurrentHashMap<String, AtomicInteger> callCounts = new ConcurrentHashMap<>();
-
-    // Tool별 총 실행 시간
     private final ConcurrentHashMap<String, AtomicLong> totalDurations = new ConcurrentHashMap<>();
-
-    // Tool별 최소/최대 실행 시간
     private final ConcurrentHashMap<String, AtomicLong> minDurations = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AtomicLong> maxDurations = new ConcurrentHashMap<>();
 
-    /**
-     * Tool 실행 기록
-     */
-    public void recordToolCall(String toolName, long duration) {
-        // 호출 횟수 증가
-        callCounts.computeIfAbsent(toolName, k -> new AtomicInteger(0)).incrementAndGet();
+    @Override
+    public String getName() {
+        return "PerformanceMonitoringAdvisor";
+    }
 
-        // 총 실행 시간 증가
-        totalDurations.computeIfAbsent(toolName, k -> new AtomicLong(0)).addAndGet(duration);
+    @Override
+    public ChatResponse aroundCall(
+            UserMessage userMessage,
+            ChatOptions options,
+            CallAroundAdvisorChain chain) {
 
-        // 최소/최대 시간 업데이트
-        minDurations.computeIfAbsent(toolName, k -> new AtomicLong(Long.MAX_VALUE))
+        long startTime = System.currentTimeMillis();
+        String requestId = java.util.UUID.randomUUID().toString().substring(0, 8);
+
+        try {
+            ChatResponse response = chain.nextAroundCall(userMessage, options);
+
+            long duration = System.currentTimeMillis() - startTime;
+            recordCall("ChatClient", duration);
+
+            log.info("요청 ID: {}, 실행 시간: {}ms", requestId, duration);
+
+            return response;
+
+        } catch (Exception e) {
+            long duration = System.currentTimeMillis() - startTime;
+            log.error("요청 ID: {}, 실행 실패, 소요 시간: {}ms", requestId, duration, e);
+            throw e;
+        }
+    }
+
+    private void recordCall(String name, long duration) {
+        callCounts.computeIfAbsent(name, k -> new AtomicInteger(0)).incrementAndGet();
+        totalDurations.computeIfAbsent(name, k -> new AtomicLong(0)).addAndGet(duration);
+        minDurations.computeIfAbsent(name, k -> new AtomicLong(Long.MAX_VALUE))
                 .updateAndGet(current -> Math.min(current, duration));
-
-        maxDurations.computeIfAbsent(toolName, k -> new AtomicLong(0))
+        maxDurations.computeIfAbsent(name, k -> new AtomicLong(0))
                 .updateAndGet(current -> Math.max(current, duration));
     }
 
-    /**
-     * 성능 통계 출력
-     */
     public void printStatistics() {
-        log.info("==================== Tool 성능 통계 ====================");
+        log.info("==================== 성능 통계 ====================");
 
-        callCounts.forEach((toolName, count) -> {
-            long total = totalDurations.get(toolName).get();
-            long min = minDurations.get(toolName).get();
-            long max = maxDurations.get(toolName).get();
+        callCounts.forEach((name, count) -> {
+            long total = totalDurations.get(name).get();
+            long min = minDurations.get(name).get();
+            long max = maxDurations.get(name).get();
             double avg = (double) total / count.get();
 
-            log.info("Tool: {}", toolName);
+            log.info("이름: {}", name);
             log.info("  호출 횟수: {}", count.get());
-            log.info("  총 실행 시간: {}ms ({}초)", total, total / 1000.0);
             log.info("  평균 실행 시간: {:.2f}ms", avg);
-            log.info("  최소 실행 시간: {}ms", min);
-            log.info("  최대 실행 시간: {}ms", max);
+            log.info("  최소/최대: {}ms / {}ms", min, max);
             log.info("--------------------------------------------------");
         });
 
         log.info("======================================================");
     }
+}
+```
 
-    /**
-     * 통계 초기화
-     */
-    public void reset() {
-        callCounts.clear();
-        totalDurations.clear();
-        minDurations.clear();
-        maxDurations.clear();
-        log.info("성능 통계가 초기화되었습니다.");
+### 통계 확인용 컨트롤러
+
+```java
+@RestController
+@RequestMapping("/api/monitoring")
+public class MonitoringController {
+
+    private final PerformanceMonitoringAdvisor performanceAdvisor;
+
+    @GetMapping("/stats")
+    public String getStatistics() {
+        performanceAdvisor.printStatistics();
+        return "통계가 콘솔에 출력되었습니다.";
+    }
+
+    @GetMapping("/stats/reset")
+    public String resetStatistics() {
+        performanceAdvisor.reset();
+        return "통계가 초기화되었습니다.";
     }
 }
 ```
 
-### 성능 모니터링 결과 예시
+### 성능 통계 출력 예시
 
 ```
-==================== Tool 성능 통계 ====================
-Tool: searchFlightsByAirline
-  호출 횟수: 15
-  총 실행 시간: 35234ms (35.234초)
-  평균 실행 시간: 2348.93ms
-  최소 실행 시간: 1234ms
-  최대 실행 시간: 5234ms
---------------------------------------------------
-Tool: searchFlightsAfterTime
-  호출 횟수: 8
-  총 실행 시간: 18456ms (18.456초)
-  평균 실행 시간: 2307.00ms
-  최소 실행 시간: 1890ms
-  최대 실행 시간: 3456ms
---------------------------------------------------
-Tool: searchFlightsByPriceRange
-  호출 횟수: 5
-  총 실행 시간: 12345ms (12.345초)
-  평균 실행 시간: 2469.00ms
-  최소 실행 시간: 2100ms
-  최대 실행 시간: 3200ms
+==================== 성능 통계 ====================
+이름: ChatClient
+  호출 횟수: 25
+  평균 실행 시간: 4823.45ms
+  최소/최대: 1234ms / 8756ms
 --------------------------------------------------
 ======================================================
 ```
 
 ---
 
-## Step 4-6: 고급 Callback 패턴
+## Step 4-6: 고급 Advisor 패턴
 
-### 패턴 1: 결과 캐싱
+### 패턴 1: 요청 캐싱 (CachingAdvisor)
 
 ```java
 @Component
-public class CachingCallback {
+public class CachingAdvisor implements CallAroundAdvisor {
 
-    private final Map<String, Object> cache = new ConcurrentHashMap<>();
+    private final Cache<String, ChatResponse> cache =
+        Caffeine.newBuilder()
+            .maximumSize(100)
+            .expireAfterWrite(10, TimeUnit.MINUTES)
+            .build();
 
-    public void afterToolCall(String toolName, Object result) {
-        String cacheKey = toolName + result.hashCode();
-        cache.put(cacheKey, result);
-        log.info("결과 캐싱: {} (키: {})", toolName, cacheKey);
-    }
+    @Override
+    public ChatResponse aroundCall(
+            UserMessage userMessage,
+            ChatOptions options,
+            CallAroundAdvisorChain chain) {
 
-    public Object getCachedResult(String toolName, String params) {
-        String cacheKey = toolName + params.hashCode();
-        Object cached = cache.get(cacheKey);
+        String cacheKey = userMessage.getContent();
+
+        ChatResponse cached = cache.getIfPresent(cacheKey);
         if (cached != null) {
             log.info("캐시 히트: {}", cacheKey);
+            return cached;
         }
-        return cached;
+
+        ChatResponse response = chain.nextAroundCall(userMessage, options);
+        cache.put(cacheKey, response);
+
+        return response;
     }
 }
 ```
 
-### 패턴 2: 결과 필터링
+### 패턴 2: 재시도 (RetryAdvisor)
 
 ```java
 @Component
-public class ResultFilteringCallback {
+public class RetryAdvisor implements CallAroundAdvisor {
 
-    public Object afterToolCall(String toolName, Object result) {
-        // 결과가 너무 크면 요약
-        if (result instanceof Map) {
-            Map<?, ?> map = (Map<?, ?>) result;
-            if (map.size() > 100) {
-                log.warn("결과가 너무 큽니다: {}개 항목 → 50개로 제한", map.size());
-                return map.entrySet().stream()
-                        .limit(50)
-                        .collect(Collectors.toMap(
-                                Map.Entry::getKey,
-                                Map.Entry::getValue
-                        ));
+    private static final int MAX_RETRIES = 3;
+
+    @Override
+    public ChatResponse aroundCall(
+            UserMessage userMessage,
+            ChatOptions options,
+            CallAroundAdvisorChain chain) {
+
+        Exception lastException = null;
+
+        for (int i = 0; i < MAX_RETRIES; i++) {
+            try {
+                return chain.nextAroundCall(userMessage, options);
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("실패 {}회, 재시도 중...", i + 1);
+
+                if (i < MAX_RETRIES - 1) {
+                    try {
+                        Thread.sleep(1000 * (i + 1));  // 지수 백오프
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("재시도 중단", ie);
+                    }
+                }
             }
         }
-        return result;
+
+        throw new RuntimeException("최대 재시도 횟수 초과", lastException);
     }
 }
 ```
 
-### 패턴 3: 에러 핸들링
+### 패턴 3: 에러 핸들링 (ErrorHandlingAdvisor)
 
 ```java
 @Component
-public class ErrorHandlingCallback {
+public class ErrorHandlingAdvisor implements CallAroundAdvisor {
 
-    public Object handleToolError(String toolName, Exception e) {
-        log.error("Tool 실행 실패: {}", toolName, e);
+    @Override
+    public ChatResponse aroundCall(
+            UserMessage userMessage,
+            ChatOptions options,
+            CallAroundAdvisorChain chain) {
 
-        // 사용자 친화적인 에러 메시지 반환
-        return Map.of(
-                "error", true,
-                "message", "일시적인 오류가 발생했습니다. 다시 시도해주세요.",
-                "toolName", toolName
-        );
+        try {
+            return chain.nextAroundCall(userMessage, options);
+
+        } catch (Exception e) {
+            log.error("LLM 호출 실패", e);
+
+            // 사용자 친화적인 에러 메시지 생성
+            String errorMessage = "죄송합니다. 일시적인 오류가 발생했습니다. " +
+                                  "잠시 후 다시 시도해주세요.";
+
+            throw new RuntimeException(errorMessage, e);
+        }
     }
 }
 ```
@@ -541,83 +491,88 @@ public class ErrorHandlingCallback {
 
 ## 일반적인 문제 해결
 
-### 문제 1: Callback이 호출되지 않음
+### 문제 1: 로그가 출력되지 않음
 
-**증상:**로그가 출력되지 않음
+**증상:** SimpleLoggerAdvisor가 동작하지 않음
 
 **해결 방법:**
-1. Callback이 `@Component`로 등록되었는지 확인
-2. Service에 Callback이 주입되었는지 확인
-3. 로그 레벨이 DEBUG/INFO인지 확인
+1. `application.yml`에 로그 레벨 설정 확인
+2. Advisor가 ChatClient에 등록되었는지 확인
+3. Spring Boot 로그 설정 확인
+
+```yaml
+logging:
+  level:
+    org.springframework.ai: DEBUG
+```
 
 ### 문제 2: 성능 저하
 
-**증상:**Callback 추가 후 응답 시간이 느려짐
+**증상:** Advisor 추가 후 응답 시간이 느려짐
 
 **해결 방법:**
-1. 불필요한 로깅 제거
-2. 비동기 로깅 사용
-3. 결과 로깅 크기 제한
+1. 불필요한 Advisor 제거
+2. 로그 레벨을 WARN으로 조정
+3. 캐싱 적용
+
+### 문제 3: Advisor 실행 순서
+
+**증상:** 예상과 다른 순서로 Advisor가 실행됨
+
+**해결 방법:**
+
+Advisor는 등록된 순서대로 실행됩니다 (First In, First Executed):
 
 ```java
-// 비동기 로깅
-@Async
-public void logAsync(String message) {
-    log.info(message);
-}
+.defaultAdvisors(
+    new CachingAdvisor(),          // 1. 먼저 캐시 확인
+    new RetryAdvisor(),            // 2. 실패 시 재시도
+    new SimpleLoggerAdvisor()      // 3. 마지막으로 로깅
+)
 ```
-
-### 문제 3: 메모리 누수
-
-**증상:**장기 실행 시 메모리 사용량 증가
-
-**해결 방법:**
-1. `ConcurrentHashMap` 크기 제한
-2. 주기적인 통계 초기화
-3. 오래된 캐시 삭제
 
 ---
 
-## Callback 활용 시나리오
+## Advisor 활용 시나리오
 
 ### 시나리오 1: 개발 환경
 
-| 목적 | Callback 동작 |
+| 목적 | Advisor 동작 |
 |------|---------------|
-| 디버깅 | 모든 로그를 상세하게 출력 |
-| 파라미터 확인 | 모든 파라미터를 로깅 |
-| 결과 확인 | 전체 결과를 로깅 |
+| 디버깅 | `SimpleLoggerAdvisor`로 상세 로그 출력 |
+| 파라미터 확인 | `CustomLoggingAdvisor`로 요청/응답 로깅 |
+| 실행 시간 측정 | `PerformanceMonitoringAdvisor` 적용 |
 
 ### 시나리오 2: 운영 환경
 
-| 목적 | Callback 동작 |
+| 목적 | Advisor 동작 |
 |------|---------------|
-| 모니터링 | 성능 통계만 수집 |
-| 보안 | 민감 정보 마스킹 |
-| 최적화 | 캐싱 적용 |
+| 모니터링 | `PerformanceMonitoringAdvisor`로 통계만 수집 |
+| 안정성 | `RetryAdvisor`, `ErrorHandlingAdvisor` 적용 |
+| 최적화 | `CachingAdvisor`로 응답 캐싱 |
 
 ---
 
 ## 체크리스트
 
-- [ ] `LoggingCallback.java`가 생성됨
-- [ ] Callback이 Service에서 사용됨
-- [ ] 콘솔에서 Tool 호출 로그 확인됨
-- [ ] 실행 시간이 측정됨
-- [ ] `PerformanceMonitor`가 구현됨
-- [ ] 성능 통계가 출력됨
+- [ ] `SimpleLoggerAdvisor`가 ChatClient에 등록됨
+- [ ] 콘솔에서 요청/응답 로그 확인됨
+- [ ] 로그 레벨이 DEBUG로 설정됨
+- [ ] `CustomLoggingAdvisor`가 필요에 따라 구현됨
+- [ ] `PerformanceMonitoringAdvisor`로 성능 측정
+- [ ] 운영 환경에 맞는 Advisor 구성 완료
 
 ---
 
 ## 다음 단계
 
-**Step 5: 다중 Function Calling과 MCP Tool 패턴**에서 여러 Tool을 효과적으로 관리하는 방법을 학습합니다.
+**Step 5: 다중 Tool 호출과 MCP 패턴**에서 여러 Tool을 효과적으로 관리하는 방법을 학습합니다.
 
 ---
 
 ## 참고 자료
 
-- [Spring AI Callback 공식 문서](https://docs.spring.io/spring-ai/reference/api/chatclient.html#_tool_calling_callbacks)
+- [Spring AI ChatClient 공식 문서](https://docs.spring.io/spring-ai/reference/api/chatclient.html)
 - [ChatClient.Advisor API](https://docs.spring.io/spring-ai/reference/api/chatclient.html#_advisors)
 - [Spring AI Observability](https://docs.spring.io/spring-ai/reference/observability.html)
 
@@ -625,30 +580,66 @@ public void logAsync(String message) {
 
 ## 심화 학습
 
-### Callback vs Advisor
+### Advisor 실행 순서 이해
 
-| 항목 | Callback | Advisor |
-|------|----------|---------|
-| **목적**| Tool 실행 과정 모니터링 | 요청/응답 수정 |
-| **타이밍**| Tool 호출 전후 | 전체 요청/응답 |
-| **사용 예시**| 로깅, 성능 측정 | 캐싱, 재시도, 보안 |
-| **적용 범위**| Tool 호출 단계 | 전체 ChatClient |
+Advisor는 **파이프라인 패턴**으로 실행됩니다:
 
-### Callback 체이닝
-
-여러 Callback을 순차적으로 실행할 수 있습니다:
+```
+요청 → [Advisor1] → [Advisor2] → [Advisor3] → ChatClient
+응답 ← [Advisor1] ← [Advisor2] ← [Advisor3] ← ChatModel
+```
 
 ```java
-public class ChainedCallback {
+defaultAdvisors(
+    new CachingAdvisor(),           // 1. 요청 → 캐시 확인
+    new RetryAdvisor(),             // 2. 요청 → 재시도 로직
+    new SimpleLoggerAdvisor()       // 3. 요청/응답 → 로깅
+)
+```
 
-    private final List<ToolCallingCallback> callbacks;
+**실행 순서:**
+1. **요청 시:** CachingAdvisor → RetryAdvisor → SimpleLoggerAdvisor → ChatClient
+2. **응답 시:** SimpleLoggerAdvisor → RetryAdvisor → CachingAdvisor → 사용자
 
-    public ChainedCallback(List<ToolCallingCallback> callbacks) {
-        this.callbacks = callbacks;
-    }
+### Spring AI 내장 Advisor
 
-    public void beforeToolCall(String toolName, Map<String, Object> arguments) {
-        callbacks.forEach(callback -> callback.beforeToolCall(toolName, arguments));
+| Advisor | 용도 | 설명 |
+|---------|------|------|
+| `SimpleLoggerAdvisor` | 로깅 | 요청/응답을 간단히 로깅 |
+| `QuestionAnswerAdvisor` | RAG | 문서 검색 결과를 컨텍스트에 추가 |
+| `PromptChatMemoryAdvisor` | 메모리 | 대화 기록을 유지 |
+| `VectorStoreChatMemoryAdvisor` | 벡터 검색 | 벡터 DB에서 관련 문서 검색 |
+
+### 사용자 정의 Advisor 구현 시 주의사항
+
+1. **순서 의존성:** 캐싱은 가장 먼저, 로깅은 가장 나중에
+2. **스레드 안전성:** 여러 요청이 동시에 처리됨을 고려
+3. **성능 고려:** 무거운 로직은 비동기로 처리
+4. **에러 처리:** 적절한 예외 처리 및 로깅
+
+```java
+// 좋은 예
+@Override
+public ChatResponse aroundCall(
+        UserMessage userMessage,
+        ChatOptions options,
+        CallAroundAdvisorChain chain) {
+
+    try {
+        // 전처리
+        log.debug("요청 수신: {}", userMessage.getContent());
+
+        // 체인 호출
+        ChatResponse response = chain.nextAroundCall(userMessage, options);
+
+        // 후처리
+        log.debug("응답 반환: {}", response.getResult().getOutput().getContent());
+
+        return response;
+
+    } catch (Exception e) {
+        log.error("Advisor 실행 중 오류", e);
+        throw e;  // 반드시 재throws
     }
 }
 ```

@@ -42,14 +42,27 @@ detect_port() {
     found=$(grep -oE '(server\.port[= ]|SERVER_PORT=)[0-9]+' "$APP_DIR/startup.sh.orig" | grep -oE '[0-9]+$' | head -1 || true)
     [ -n "$found" ] && { echo "$found startup.sh.orig"; return; }
   fi
+  local conf target upstream
   for conf in $(grep -rlE "server_name[^;]*$NGINX_HOST" /etc/nginx/conf.d /etc/nginx/sites-enabled 2>/dev/null || true); do
-    found=$(grep -oE 'proxy_pass[[:space:]]+https?://(127\.0\.0\.1|localhost|0\.0\.0\.0)[^:;]*:[0-9]+' "$conf" | grep -oE '[0-9]+$' | head -1 || true)
+    # proxy_pass http://127.0.0.1:8000; 처럼 포트가 바로 적힌 경우
+    target=$(grep -oE 'proxy_pass[[:space:]]+https?://[^;[:space:]]+' "$conf" | head -1 | sed -E 's#proxy_pass[[:space:]]+https?://##' || true)
+    found=$(echo "$target" | grep -oE ':[0-9]+' | tr -d ':' | head -1 || true)
     [ -n "$found" ] && { echo "$found nginx($conf)"; return; }
+    # proxy_pass http://fly_backend; 처럼 upstream 이름을 쓰는 경우
+    upstream="${target%%/*}"
+    if [ -n "$upstream" ]; then
+      found=$(grep -rhA5 -E "upstream[[:space:]]+$upstream[[:space:]]*\{" /etc/nginx 2>/dev/null \
+        | grep -oE 'server[[:space:]]+[^;]+:[0-9]+' | grep -oE '[0-9]+$' | head -1 || true)
+      [ -n "$found" ] && { echo "$found nginx-upstream($upstream)"; return; }
+    fi
   done
   echo "8080 default"
 }
 read -r PORT PORT_SOURCE < <(detect_port)
 echo "[startup] 포트 $PORT (근거: $PORT_SOURCE)"
+# 502 진단용: nginx가 이 도메인을 어디로 넘기는지 출력 (키 같은 비밀 값은 들어 있지 않음)
+grep -rnE "server_name[^;]*$NGINX_HOST|proxy_pass|upstream|^[[:space:]]*server[[:space:]]+[^;]+:[0-9]+" \
+  /etc/nginx/conf.d /etc/nginx/sites-enabled 2>/dev/null | sed 's/^/[startup][nginx] /' | head -20 || true
 JAVA_OPTS="${JAVA_OPTS:--Xms512m -Xmx1024m}"
 
 # 1. 실행 중인 애플리케이션 종료

@@ -1,318 +1,365 @@
 <!DOCTYPE html>
-<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>항공 스케줄 MCP 서버</title>
-
-    <!-- Tabler.io CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css" rel="stylesheet"/>
-    <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" rel="stylesheet"/>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>에이전트 패턴 비교</title>
     <style>
         :root {
-            --tblr-font-sans-serif: 'Inter', -apple-system, BlinkMacSystemFont, San Francisco, Segoe UI, Roboto, Helvetica Neue, sans-serif;
+            --bg: #f6f7f9;
+            --surface: #ffffff;
+            --surface-2: #f0f2f5;
+            --border: #e1e4e8;
+            --text: #1d2129;
+            --muted: #6b7280;
+            --accent: #2f6fde;
+            --accent-soft: #e8f0fd;
+            --danger: #c93c3c;
+            --code: #5b6472;
+            --llm: #7c4ddb;
+            --tool: #d9822b;
+            --worker: #1f9d74;
+            --radius: 10px;
+            --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #14161a;
+                --surface: #1c1f24;
+                --surface-2: #252931;
+                --border: #323741;
+                --text: #e6e8eb;
+                --muted: #9aa1ac;
+                --accent: #6b9cf0;
+                --accent-soft: #23314a;
+                --danger: #ec7b7b;
+                --code: #9aa3b2;
+                --llm: #a888f0;
+                --tool: #f0a35c;
+                --worker: #4cc79e;
+            }
+        }
+        * { box-sizing: border-box; }
         body {
-            font-feature-settings: "cv03", "cv04", "cv11";
-        }
-        .hero-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 60px 0;
-            margin-bottom: 40px;
-        }
-        .hero-section h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 10px;
-        }
-        .hero-section p {
-            font-size: 1.2rem;
-            opacity: 0.9;
-        }
-        .feature-card {
-            transition: all 0.3s ease;
-            height: 100%;
-        }
-        .feature-card:hover {
-            transform: translateY(-5px);
-        }
-        .feature-card .card-body {
-            text-align: center;
-            padding: 2rem;
-        }
-        .feature-icon {
-            width: 64px;
-            height: 64px;
-            margin: 0 auto 1rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            background: rgba(102, 126, 234, 0.1);
-            color: #667eea;
-            font-size: 1.5rem;
-        }
-        .endpoint-list {
-            list-style: none;
-            padding: 0;
-        }
-        .endpoint-list li {
-            padding: 12px 16px;
-            margin: 8px 0;
-            background: #f8f9fa;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
-        }
-        .endpoint-list code {
-            color: #667eea;
-            font-weight: 600;
-            word-break: break-all;
-        }
-        .code-block {
-            background: #2d3748;
-            color: #e2e8f0;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 15px 0;
-        }
-        .code-block pre {
             margin: 0;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.9rem;
-            line-height: 1.6;
+            background: var(--bg);
+            color: var(--text);
+            font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
         }
-        .agent-flow {
-            background: #f8f9fa;
-            padding: 20px;
+        main { max-width: 1280px; margin: 0 auto; padding: 32px 16px 64px; }
+        h1 { font-size: 24px; margin: 0 0 4px; }
+        h2 { font-size: 17px; margin: 0; }
+        p { margin: 0; }
+        .muted { color: var(--muted); }
+        .small { font-size: 13px; }
+
+        /* 패턴 설명 카드 */
+        .patterns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 24px 0; }
+        .pattern {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+        }
+        .pattern .step { font-size: 12px; color: var(--muted); }
+        .pattern .who { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
+        .pattern p { margin-top: 6px; font-size: 14px; color: var(--muted); }
+
+        /* 입력 */
+        .search {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+        }
+        .search-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .search input[type=text] {
+            flex: 1 1 320px;
+            min-width: 0;
+            padding: 10px 12px;
+            font: inherit;
+            color: var(--text);
+            background: var(--surface-2);
+            border: 1px solid var(--border);
             border-radius: 8px;
-            margin: 15px 0;
         }
-        .agent-flow div {
-            padding: 8px 0;
+        button {
+            font: inherit;
+            cursor: pointer;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            padding: 9px 14px;
         }
-        .agent-flow strong {
-            color: #667eea;
+        button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+        button:disabled { opacity: .55; cursor: wait; }
+        .examples { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+        .chip { font-size: 13px; padding: 4px 10px; border-radius: 99px; background: var(--surface-2); }
+        .chip b { color: var(--muted); font-weight: 500; margin-right: 4px; }
+        .options { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 12px; font-size: 14px; align-items: center; }
+        .options label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+
+        /* 범례 */
+        .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 20px 0 10px; font-size: 13px; color: var(--muted); }
+        .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); vertical-align: -1px; }
+        .k-CODE { --c: var(--code); }
+        .k-LLM { --c: var(--llm); }
+        .k-TOOL { --c: var(--tool); }
+        .k-WORKER { --c: var(--worker); }
+
+        /* 결과 열 */
+        .results { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            min-width: 0;
+        }
+        .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+        .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--muted); }
+        .stats strong { color: var(--text); font-variant-numeric: tabular-nums; }
+        .answer { margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; white-space: pre-wrap; font-size: 14px; }
+        .answer.error { color: var(--danger); }
+        .section-title { margin: 16px 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+
+        /* 실행 기록 (간트 차트) */
+        .trace { display: grid; gap: 4px; }
+        .trace-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px; align-items: start; font-size: 13px; }
+        .trace-row .no { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+        .trace-row .what { min-width: 0; }
+        .trace-row .actor { font-family: var(--mono); font-size: 12px; color: var(--c); font-weight: 600; }
+        .trace-row .detail { color: var(--muted); overflow-wrap: anywhere; }
+        .bar-track { position: relative; height: 6px; margin-top: 3px; background: var(--surface-2); border-radius: 3px; }
+        .bar { position: absolute; top: 0; height: 6px; min-width: 3px; border-radius: 3px; background: var(--c); }
+        .thread { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+        /* 항공편 결과 */
+        details.task { border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; }
+        details.task summary { cursor: pointer; padding: 8px 10px; font-size: 14px; list-style-position: inside; }
+        details.task .body { padding: 0 10px 10px; }
+        .airline { margin-top: 8px; font-size: 13px; font-weight: 600; }
+        .flight { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+        .flight:last-child { border-bottom: 0; }
+        .flight .time { font-variant-numeric: tabular-nums; }
+        .flight .price { font-variant-numeric: tabular-nums; font-weight: 600; }
+        .flight.best .price { color: var(--worker); }
+        .badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); margin-left: 6px; }
+
+        .placeholder { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
+        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 860px) {
+            .patterns { grid-template-columns: 1fr; }
+            main { padding-top: 20px; }
         }
     </style>
 </head>
-<body class="layout-fluid">
-    <div class="page">
-        <!-- Hero Header -->
-        <div class="hero-section">
-            <div class="container-xl">
-                <div class="text-center">
-                    <div class="mb-3">
-                        <i class="ti ti-plane" style="font-size: 4rem;"></i>
-                    </div>
-                    <h1>항공 스케줄 MCP 서버</h1>
-                    <p class="mb-0">MCP & A2A 오케스트레이션 학습 프로젝트</p>
-                </div>
-            </div>
+<body>
+<main>
+    <header>
+        <h1>에이전트 패턴 비교 실습</h1>
+        <p class="muted">같은 질문을 세 가지 패턴으로 처리하고, 각 단계를 <strong>누가 결정했는지</strong> 실행 기록으로 비교합니다.</p>
+    </header>
+
+    <section class="patterns" aria-label="패턴 설명">
+        <article class="pattern">
+            <div class="step">Step 9 · /api/search/coordinator</div>
+            <h2>Coordinator</h2>
+            <span class="who k-CODE" style="background: var(--surface-2); color: var(--c)">코드가 제어</span>
+            <p>처리 순서가 코드에 고정되어 있습니다. LLM은 정규식이 실패할 때 검색 조건 추출에만 쓰입니다. 빠르고 결과가 항상 같습니다.</p>
+        </article>
+        <article class="pattern">
+            <div class="step">Step 10 · /api/search/tool-calling</div>
+            <h2>Tool Calling 에이전트</h2>
+            <span class="who k-LLM" style="background: var(--surface-2); color: var(--c)">LLM이 제어</span>
+            <p>LLM이 어떤 Tool을 어떤 인자로 몇 번 부를지 결정합니다. 유연하지만 모델에 따라 결과가 달라집니다.</p>
+        </article>
+        <article class="pattern">
+            <div class="step">Step 11 · /api/search/orchestrator</div>
+            <h2>Orchestrator-Workers</h2>
+            <span class="who k-WORKER" style="background: var(--surface-2); color: var(--c)">LLM이 나누고 Worker가 실행</span>
+            <p>LLM이 요청을 여러 작업으로 나누고, Worker가 병렬로 검색한 뒤, LLM이 결과를 비교해 추천합니다.</p>
+        </article>
+    </section>
+
+    <section class="search" aria-label="검색">
+        <form id="searchForm" class="search-row">
+            <input id="message" type="text" autocomplete="off"
+                   placeholder="예: 내일 광주에서 제주로 가는 항공편 알려줘" aria-label="검색 문장">
+            <button type="submit" class="primary" id="runAll">세 패턴 모두 실행</button>
+        </form>
+        <div class="examples" id="examples">
+            <button type="button" class="chip" data-q="내일 광주에서 제주로 가는 항공편 알려줘"><b>기본</b>내일 광주에서 제주</button>
+            <button type="button" class="chip" data-q="모레 김포에서 제주 오후 2시 이후 항공편"><b>시간</b>모레 김포→제주 오후 2시 이후</button>
+            <button type="button" class="chip" data-q="내일 김포에서 제주 6만원 이하 항공편"><b>가격</b>내일 김포→제주 6만원 이하</button>
+            <button type="button" class="chip" data-q="이번 주 금요일이나 토요일에 김포나 광주에서 제주 가는 제일 싼 항공편 찾아줘"><b>복합</b>금·토 × 김포·광주 → 제주</button>
         </div>
-
-        <div class="page-wrapper">
-            <div class="page-body">
-                <div class="container-xl">
-                    <!-- API Endpoints Card -->
-                    <div class="card mb-4">
-                        <div class="card-header">
-                            <h3 class="card-title">
-                                <i class="ti ti-api me-2"></i>
-                                MCP API 엔드포인트
-                            </h3>
-                        </div>
-                        <div class="card-body">
-                            <!-- 항공편 검색 -->
-                            <div class="mb-4">
-                                <h4 class="mb-3">
-                                    <i class="ti ti-plane me-2 text-primary"></i>
-                                    항공편 검색
-                                </h4>
-                                <ul class="endpoint-list">
-                                    <li>
-                                        <code>GET /api/mcp/flights/search?departure={출발공항}&arrival={도착공항}&date={날짜}</code>
-                                    </li>
-                                    <li>
-                                        <code>GET /api/mcp/flights/search/time?...&afterTime={시간}</code>
-                                    </li>
-                                    <li>
-                                        <code>GET /api/mcp/flights/search/price?...&minPrice={최소가격}&maxPrice={최대가격}</code>
-                                    </li>
-                                </ul>
-                            </div>
-
-                            <!-- 공항 정보 -->
-                            <div class="mb-4">
-                                <h4 class="mb-3">
-                                    <i class="ti ti-building me-2 text-primary"></i>
-                                    공항 정보
-                                </h4>
-                                <ul class="endpoint-list">
-                                    <li><code>GET /api/mcp/airports</code> - 전체 공항 목록</li>
-                                    <li><code>GET /api/mcp/airports/code?airportName={공항명}</code> - 공항 코드 조회</li>
-                                </ul>
-                            </div>
-
-                            <!-- 항공사 정보 -->
-                            <div class="mb-0">
-                                <h4 class="mb-3">
-                                    <i class="ti ti-plane me-2 text-primary"></i>
-                                    항공사 정보
-                                </h4>
-                                <ul class="endpoint-list">
-                                    <li><code>GET /api/mcp/airlines</code> - 전체 항공사 목록</li>
-                                    <li><code>GET /api/mcp/airlines/id?airlineName={항공사명}</code> - 항공사 ID 조회</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Usage Examples Card -->
-                    <div class="card mb-4">
-                        <div class="card-header">
-                            <h3 class="card-title">
-                                <i class="ti ti-code me-2"></i>
-                                사용 예시
-                            </h3>
-                        </div>
-                        <div class="card-body">
-                            <h4 class="mb-3">cURL 예제</h4>
-                            <div class="code-block">
-                                <pre># 항공편 검색
-curl "http://localhost:8080/api/mcp/flights/search?departure=광주&arrival=제주&date=내일"
-
-# 오후 2시 이후 출발 항공편 검색
-curl "http://localhost:8080/api/mcp/flights/search/time?departure=광주&arrival=제주&date=내일&afterTime=14:00"
-
-# 가격 범위 필터링
-curl "http://localhost:8080/api/mcp/flights/search/price?departure=광주&arrival=제주&date=내일&minPrice=30000&maxPrice=70000"</pre>
-                            </div>
-
-                            <h4 class="mb-3 mt-4">A2A 에이전트 흐름</h4>
-                            <div class="agent-flow">
-                                <div><i class="ti ti-arrow-down me-2"></i><strong>사용자:</strong> "내일 광주에서 제주로 가는 항공편 알려줘"</div>
-                                <div><i class="ti ti-arrow-down me-2"></i><strong>Coordinator Agent:</strong> 사용자 의도 파악</div>
-                                <div><i class="ti ti-arrow-down me-2"></i><strong>Date Parser Agent:</strong> "내일" → "20260310" 변환</div>
-                                <div><i class="ti ti-arrow-down me-2"></i><strong>Airport Code Agent:</strong> "광주" → "NAARKJJ", "제주" → "NAARKPC"</div>
-                                <div><i class="ti ti-arrow-down me-2"></i><strong>Flight Search Agent:</strong> 공공데이터 API 호출</div>
-                                <div><i class="ti ti-arrow-down me-2"></i><strong>Grouping Agent:</strong> 항공사별 그룹핑</div>
-                                <div><i class="ti ti-arrow-down me-2"></i><strong>Response Formatter Agent:</strong> 자연어로 변환</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Features Grid -->
-                    <div class="row row-cards mb-4">
-                        <div class="col-sm-6 col-lg-4">
-                            <div class="card feature-card">
-                                <div class="card-body">
-                                    <div class="feature-icon">
-                                        <i class="ti ti-message"></i>
-                                    </div>
-                                    <h4 class="card-title">자연어 처리</h4>
-                                    <p class="text-muted">"내일", "모레", "오후 2시" 등 자연어 이해</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-sm-6 col-lg-4">
-                            <div class="card feature-card">
-                                <div class="card-body">
-                                    <div class="feature-icon">
-                                        <i class="ti ti-bolt"></i>
-                                    </div>
-                                    <h4 class="card-title">A2A 오케스트레이션</h4>
-                                    <p class="text-muted">다수의 전문화된 에이전트 협업</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-sm-6 col-lg-4">
-                            <div class="card feature-card">
-                                <div class="card-body">
-                                    <div class="feature-icon">
-                                        <i class="ti ti-chart-bar"></i>
-                                    </div>
-                                    <h4 class="card-title">항공사별 그룹핑</h4>
-                                    <p class="text-muted">항공사별로 정리된 결과 제공</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-sm-6 col-lg-4">
-                            <div class="card feature-card">
-                                <div class="card-body">
-                                    <div class="feature-icon">
-                                        <i class="ti ti-clock"></i>
-                                    </div>
-                                    <h4 class="card-title">시간 필터링</h4>
-                                    <p class="text-muted">원하는 시간대 항공편 검색</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-sm-6 col-lg-4">
-                            <div class="card feature-card">
-                                <div class="card-body">
-                                    <div class="feature-icon">
-                                        <i class="ti ti-discount"></i>
-                                    </div>
-                                    <h4 class="card-title">가격 필터링</h4>
-                                    <p class="text-muted">예산에 맞는 항공편 검색</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-sm-6 col-lg-4">
-                            <div class="card feature-card">
-                                <div class="card-body">
-                                    <div class="feature-icon">
-                                        <i class="ti ti-world"></i>
-                                    </div>
-                                    <h4 class="card-title">REST API</h4>
-                                    <p class="text-muted">표준 REST API 엔드포인트</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Quick Links Card -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">
-                                <i class="ti ti-link me-2"></i>
-                                빠른 링크
-                            </h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="d-flex gap-2">
-                                <a href="/nl-search" class="btn btn-primary">
-                                    <i class="ti ti-magic me-1"></i>
-                                    자연어 검색
-                                </a>
-                                <a href="/mcp-test" class="btn btn-success">
-                                    <i class="ti ti-flask me-1"></i>
-                                    MCP 테스트 도구
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="options">
+            <span class="muted small">LLM</span>
+            <label><input type="radio" name="model" value="ollama" checked> Ollama (로컬)</label>
+            <label><input type="radio" name="model" value="gemini"> Gemini</label>
+            <span class="muted small" style="margin-left:auto">패턴</span>
+            <label><input type="checkbox" name="pattern" value="coordinator" checked> Coordinator</label>
+            <label><input type="checkbox" name="pattern" value="tool-calling" checked> Tool Calling</label>
+            <label><input type="checkbox" name="pattern" value="orchestrator" checked> Orchestrator</label>
         </div>
+    </section>
 
-        <!-- Footer -->
-        <footer class="footer footer-transparent">
-            <div class="container-xl">
-                <div class="row text-center align-items-center flex-row-reverse">
-                    <div class="col-12">
-                        <div class="text-muted">
-                            Spring AI & MCP & A2A Orchestration Learning Project
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </footer>
+    <div class="legend" aria-label="범례">
+        <span class="k-CODE">코드 (개발자가 순서 결정)</span>
+        <span class="k-LLM">LLM (판단·계획·요약)</span>
+        <span class="k-TOOL">Tool (LLM이 호출 요청)</span>
+        <span class="k-WORKER">Worker (Orchestrator가 맡긴 작업)</span>
     </div>
 
-    <!-- Tabler.io JS -->
-    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/js/tabler.min.js"></script>
+    <section class="results" id="results" aria-live="polite">
+        <p class="placeholder">예시를 고르거나 문장을 입력한 뒤 실행해 보세요.</p>
+    </section>
+</main>
+
+<script>
+    const PATTERNS = {
+        'coordinator': { title: 'Coordinator', step: 'Step 9' },
+        'tool-calling': { title: 'Tool Calling 에이전트', step: 'Step 10' },
+        'orchestrator': { title: 'Orchestrator-Workers', step: 'Step 11' }
+    };
+
+    const form = document.getElementById('searchForm');
+    const input = document.getElementById('message');
+    const runButton = document.getElementById('runAll');
+    const resultsEl = document.getElementById('results');
+
+    // 서버·LLM이 돌려준 문자열을 HTML에 넣기 전에 이스케이프한다 (XSS 방지)
+    function esc(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function won(price) {
+        return price == null ? '가격 없음' : price.toLocaleString('ko-KR') + '원';
+    }
+
+    document.getElementById('examples').addEventListener('click', event => {
+        const chip = event.target.closest('[data-q]');
+        if (!chip) return;
+        input.value = chip.dataset.q;
+        input.focus();
+    });
+
+    form.addEventListener('submit', event => {
+        event.preventDefault();
+        const message = input.value.trim();
+        if (!message) {
+            input.focus();
+            return;
+        }
+        const model = document.querySelector('input[name=model]:checked').value;
+        const patterns = [...document.querySelectorAll('input[name=pattern]:checked')].map(el => el.value);
+        if (patterns.length === 0) return;
+        runAll(message, model, patterns);
+    });
+
+    async function runAll(message, model, patterns) {
+        runButton.disabled = true;
+        resultsEl.innerHTML = patterns.map(p => `
+            <article class="panel" id="panel-${p}">
+                ${panelHead(p)}
+                <p class="placeholder"><span class="spinner"></span>실행 중…</p>
+            </article>`).join('');
+
+        // 세 패턴을 동시에 요청하고, 끝나는 대로 각 열을 채운다
+        await Promise.all(patterns.map(async pattern => {
+            const panel = document.getElementById(`panel-${pattern}`);
+            try {
+                const response = await fetch(`/api/search/${pattern}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message, model })
+                });
+                const data = await response.json();
+                panel.innerHTML = renderPanel(pattern, data);
+            } catch (error) {
+                panel.innerHTML = panelHead(pattern) +
+                    `<div class="answer error">요청 실패: ${esc(error.message)}</div>`;
+            }
+        }));
+        runButton.disabled = false;
+    }
+
+    function panelHead(pattern) {
+        const info = PATTERNS[pattern];
+        return `<div class="panel-head"><h2>${esc(info.title)}</h2><span class="muted small">${esc(info.step)}</span></div>`;
+    }
+
+    function renderPanel(pattern, data) {
+        const trace = data.trace || [];
+        const count = kind => trace.filter(step => step.kind === kind).length;
+        const results = data.results || [];
+
+        let html = panelHead(pattern);
+        html += `<div class="stats">
+            <span>전체 <strong>${(data.elapsedMs ?? 0).toLocaleString()}ms</strong></span>
+            <span>LLM <strong>${count('LLM')}</strong>회</span>
+            <span>Tool <strong>${count('TOOL')}</strong>회</span>
+            <span>Worker <strong>${count('WORKER')}</strong>개</span>
+            <span>코드 단계 <strong>${count('CODE')}</strong>개</span>
+        </div>`;
+        html += `<div class="answer ${data.success ? '' : 'error'}">${esc(data.message)}</div>`;
+
+        if (trace.length) {
+            html += `<div class="section-title">실행 기록</div>${renderTrace(trace, data.elapsedMs)}`;
+        }
+        if (results.length) {
+            html += `<div class="section-title">검색 결과</div>`;
+            html += results.map((result, index) => renderTask(result, index === 0 && results.length === 1)).join('');
+        }
+        return html;
+    }
+
+    // 시작 시각과 걸린 시간을 막대로 그려, 병렬 실행(Worker)과 LLM 대기 시간을 한눈에 보이게 한다
+    function renderTrace(trace, totalMs) {
+        const total = Math.max(totalMs || 0, ...trace.map(s => s.startMs + s.durationMs), 1);
+        return `<div class="trace">${trace.map(step => {
+            const left = (step.startMs / total) * 100;
+            const width = Math.max((step.durationMs / total) * 100, 0.6);
+            return `<div class="trace-row k-${esc(step.kind)}">
+                <span class="no">${step.order}</span>
+                <div class="what">
+                    <span class="actor">${esc(step.actor)}</span> ${esc(step.title)}
+                    <span class="muted small">${step.durationMs}ms</span>
+                    <div class="detail">${esc(step.detail)} <span class="thread">· ${esc(step.thread)}</span></div>
+                    <div class="bar-track"><div class="bar" style="left:${left}%;width:${width}%"></div></div>
+                </div>
+            </div>`;
+        }).join('')}</div>`;
+    }
+
+    function renderTask(result, open) {
+        const cheapest = result.cheapest;
+        const airlines = Object.entries(result.flightsByAirline || {});
+        const body = airlines.length === 0
+            ? '<p class="muted small">조건에 맞는 항공편이 없습니다.</p>'
+            : airlines.map(([airline, flights]) => `
+                <div class="airline">${esc(airline)} <span class="muted">${flights.length}편</span></div>
+                ${flights.map(flight => {
+                    const best = cheapest && flight.flightId === cheapest.flightId && flight.departureTime === cheapest.departureTime;
+                    return `<div class="flight ${best ? 'best' : ''}">
+                        <span class="time">${esc(flight.departureTime)} → ${esc(flight.arrivalTime)}
+                            <span class="muted">${esc(flight.flightId)}</span>${best ? '<span class="badge">최저가</span>' : ''}</span>
+                        <span class="price">${esc(won(flight.price))}</span>
+                    </div>`;
+                }).join('')}`).join('');
+
+        return `<details class="task" ${open ? 'open' : ''}>
+            <summary>${esc(result.label)} · <strong>${result.totalCount}편</strong>
+                ${cheapest ? `<span class="muted"> · 최저 ${esc(won(cheapest.price))}</span>` : ''}</summary>
+            <div class="body">${body}</div>
+        </details>`;
+    }
+</script>
 </body>
 </html>

@@ -5,6 +5,11 @@ spring:
     ansi:
       enabled: always
 
+  # LLM 응답이 느릴 수 있으므로 HTTP 클라이언트 읽기 타임아웃을 5분으로 늘린다 (Ollama·RestClient 공통)
+  http:
+    client:
+      read-timeout: 300s
+
 server:
   port: 8080
   # 서버 타임아웃 설정 (5분)
@@ -16,7 +21,15 @@ server:
 data-go-kr:
   api:
     url: https://apis.data.go.kr/1613000/DmstcFlightNvgInfo
-    service-key: "${DATA_GO_KR_SERVICE_KEY:oqWzAGWsxHR/cre4r5C2TJD0qw9ldrsGzxIAnDQRIvb31Gt6m/EDMUhczdZ5gIFINhj/QBbAVRTnFuTnBMOJyw==}"
+    service-key: ${DATA_GO_KR_SERVICE_KEY:}
+
+# Spring AI 재시도 설정
+# 기본값(최대 10회, 대기 간격 5배씩 증가)은 LLM 서버가 꺼져 있을 때 응답이 수십 분 멈추므로 실습용으로 줄인다
+spring.ai.retry:
+  max-attempts: 2
+  backoff:
+    initial-interval: 1s
+    max-interval: 5s
 
 # Spring AI Ollama 설정
 spring.ai.ollama:
@@ -25,11 +38,10 @@ spring.ai.ollama:
     options:
       model: qwen2.5:3b-instruct-q4_K_M
       temperature: 0.0
-      # 타임아웃 5분 (300초)
-      timeout: 300s
       max-tokens: 1024
       num-thread: 4
-      num-ctx: 2048
+      # Tool 7개의 설명과 Tool 결과가 들어가도록 컨텍스트를 늘린다
+      num-ctx: 4096
       top-p: 0.9
       top-k: 40
       keep-alive: 10m
@@ -38,12 +50,14 @@ spring.ai.ollama:
 # Spring AI Google GenAI 설정 (Gemini)
 spring.ai.google:
   genai:
-    api-key: ${GOOGLE_GENAI_API_KEY:AIzaSyA6XO9NuGKguis8ckJ17FnteAKfqiT_XA0}
+    # 키가 없어도 앱이 시작되도록 기본값을 둔다. 이 값이면 Gemini를 고를 때 안내 메시지를 보여 준다. (ChatClientProvider)
+    api-key: ${GOOGLE_GENAI_API_KEY:not-set}
     chat:
       options:
         model: gemini-2.5-flash
         temperature: 0.0
-        max-output-tokens: 256
+        # 계획(JSON)과 추천 답변이 잘리지 않도록 넉넉하게 둔다
+        max-output-tokens: 1024
         top-p: 0.9
         top-k: 40
 

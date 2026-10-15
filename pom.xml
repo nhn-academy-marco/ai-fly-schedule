@@ -8,7 +8,7 @@
         <version>3.5.11</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
-    <groupId>com.nhnacademy</groupId>
+    <groupId>net.java21</groupId>
     <artifactId>flyschedule</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>flyschedule</name>

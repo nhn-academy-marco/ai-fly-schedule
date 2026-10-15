@@ -1,6 +1,4 @@
-### @env dev
-@serviceKey = oqWzAGWsxHR/cre4r5C2TJD0qw9ldrsGzxIAnDQRIvb31Gt6m/EDMUhczdZ5gIFINhj/QBbAVRTnFuTnBMOJyw==
-@baseUrl = https://apis.data.go.kr/1613000/DmstcFlightNvgInfo
+# serviceKey와 baseUrl은 http-client.env.json / http-client.private.env.json에서 읽습니다. (README 참고)
 @depPlandTime = 20260310
 
 ### 항공편 조회 (GET) - 광주 → 제주
@@ -16,7 +14,7 @@ Accept: application/json
 ###
 
 ### 항공편 조회 (GET) - 김해 → 제주
-GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKJB&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKPK&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
 Accept: application/json
 
 ###
@@ -28,7 +26,7 @@ Accept: application/json
 ###
 
 ### 항공편 조회 (GET) - 청주 → 제주
-GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKNJ&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKTU&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
 Accept: application/json
 
 ###

@@ -37,3 +37,9 @@ build/
 /.gitattributes
 /mvnw
 /mvnw.cmd
+
+### HTTP Client 비공개 환경 변수 (서비스 키) ###
+http-client.private.env.json
+
+### macOS ###
+.DS_Store

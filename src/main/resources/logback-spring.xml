@@ -52,7 +52,7 @@
             <appender-ref ref="CONSOLE" />
         </root>
 
-        <logger name="com.nhnacademy.flyschedule" level="DEBUG" additivity="false">
+        <logger name="net.java21.flyschedule" level="DEBUG" additivity="false">
             <appender-ref ref="CONSOLE" />
         </logger>
 
@@ -68,7 +68,7 @@
             <appender-ref ref="ERROR_FILE" />
         </root>
 
-        <logger name="com.nhnacademy.flyschedule" level="INFO" additivity="false">
+        <logger name="net.java21.flyschedule" level="INFO" additivity="false">
             <appender-ref ref="FILE" />
             <appender-ref ref="ERROR_FILE" />
         </logger>
@@ -87,7 +87,7 @@
             <appender-ref ref="ERROR_FILE" />
         </root>
 
-        <logger name="com.nhnacademy.flyschedule" level="DEBUG" additivity="false">
+        <logger name="net.java21.flyschedule" level="DEBUG" additivity="false">
             <appender-ref ref="CONSOLE" />
             <appender-ref ref="FILE" />
         </logger>

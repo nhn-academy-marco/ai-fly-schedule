@@ -5,7 +5,9 @@
 # 필요한 환경 변수
 #   DATA_GO_KR_SERVICE_KEY  (필수) 공공데이터 포털 서비스 키 - workflow가 GitHub Secrets에서 넘겨줌
 #   GOOGLE_GENAI_API_KEY    (선택) Gemini API 키 - 서버의 ~/fly-schedule/.env에 적어 두면 읽음
-#   SERVER_PORT             (선택) 기본 8080
+#   SERVER_PORT             (선택) 기본 10600 (nginx가 fly.java21.net을 넘기는 포트)
+#   SPRING_PROFILES_ACTIVE  (선택) 기본 prod
+#   JAVA_BIN                (선택) 기본 /usr/local/java/java21/bin/java, 없으면 JAVA_HOME → PATH의 java
 #   JAVA_OPTS               (선택) 기본 "-Xms512m -Xmx1024m"
 set -euo pipefail
 
@@ -30,7 +32,7 @@ fi
 export DATA_GO_KR_SERVICE_KEY
 [ -n "${GOOGLE_GENAI_API_KEY:-}" ] && export GOOGLE_GENAI_API_KEY
 
-# 포트 결정: SERVER_PORT → 원래 startup.sh(.orig)에 적힌 포트 → nginx의 proxy_pass 포트 → 8080
+# 포트 결정: SERVER_PORT → 원래 startup.sh(.orig)에 적힌 포트 → nginx의 proxy_pass 포트 → 10600
 # (nginx가 바라보는 포트와 다르면 502 Bad Gateway가 나므로, 서버 설정에서 포트를 찾는다)
 NGINX_HOST="${NGINX_SERVER_NAME:-fly.java21.net}"
 detect_port() {
@@ -39,7 +41,8 @@ detect_port() {
   fi
   local found
   if [ -f "$APP_DIR/startup.sh.orig" ]; then
-    found=$(grep -oE '(server\.port[= ]|SERVER_PORT=)[0-9]+' "$APP_DIR/startup.sh.orig" | grep -oE '[0-9]+$' | head -1 || true)
+    # "--server.port=10600" 또는 "PORT=10600" (--server.port=$PORT처럼 변수를 쓰는 경우)
+    found=$(grep -oE '(server\.port[= ]|SERVER_PORT=|^[[:space:]]*PORT=)[0-9]+' "$APP_DIR/startup.sh.orig" | grep -oE '[0-9]+$' | head -1 || true)
     [ -n "$found" ] && { echo "$found startup.sh.orig"; return; }
   fi
   local conf target upstream
@@ -56,7 +59,7 @@ detect_port() {
       [ -n "$found" ] && { echo "$found nginx-upstream($upstream)"; return; }
     fi
   done
-  echo "8080 default"
+  echo "10600 default"
 }
 read -r PORT PORT_SOURCE < <(detect_port)
 echo "[startup] 포트 $PORT (근거: $PORT_SOURCE)"
@@ -64,6 +67,19 @@ echo "[startup] 포트 $PORT (근거: $PORT_SOURCE)"
 grep -rnE "server_name[^;]*$NGINX_HOST|proxy_pass|upstream|^[[:space:]]*server[[:space:]]+[^;]+:[0-9]+" \
   /etc/nginx/conf.d /etc/nginx/sites-enabled 2>/dev/null | sed 's/^/[startup][nginx] /' | head -20 || true
 JAVA_OPTS="${JAVA_OPTS:--Xms512m -Xmx1024m}"
+PROFILE="${SPRING_PROFILES_ACTIVE:-prod}"
+
+# 비대화식 SSH에서는 PATH의 java가 21이 아닐 수 있으므로 서버에 설치된 Java 21을 우선 사용
+if [ -z "${JAVA_BIN:-}" ]; then
+  if [ -x /usr/local/java/java21/bin/java ]; then
+    JAVA_BIN=/usr/local/java/java21/bin/java
+  elif [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    JAVA_BIN="$JAVA_HOME/bin/java"
+  else
+    JAVA_BIN=java
+  fi
+fi
+echo "[startup] Java: $JAVA_BIN ($("$JAVA_BIN" -version 2>&1 | head -1))"
 
 # 1. 실행 중인 애플리케이션 종료
 stop_pid() {
@@ -82,16 +98,24 @@ if [ -f "$PID_FILE" ]; then
   rm -f "$PID_FILE"
 fi
 # PID 파일 없이 실행된 이전 프로세스(옛 startup.sh로 띄운 것)도 정리
-for pid in $(pgrep -f "java .*fly\.jar" || true); do
+for pid in $(pgrep -f "java.* -jar .*fly\.jar" || true); do
   stop_pid "$pid"
 done
+# 같은 포트를 잡고 있는 프로세스가 남아 있으면 새 앱이 뜨지 못하므로 정리
+if command -v lsof >/dev/null; then
+  for pid in $(lsof -t -i:"$PORT" -sTCP:LISTEN 2>/dev/null || true); do
+    echo "[startup] 포트 $PORT를 사용 중인 프로세스 종료 (pid=$pid)"
+    stop_pid "$pid"
+  done
+fi
 
 # 2. 새로 시작 (SSH 세션이 끝나도 계속 실행되도록 nohup, Linux에서는 setsid로 세션도 분리)
 DETACH=""
 command -v setsid >/dev/null && DETACH="setsid"
-echo "[startup] 시작: $JAR (port=$PORT)"
+echo "[startup] 시작: $JAR (port=$PORT, profile=$PROFILE)"
 # shellcheck disable=SC2086
-SERVER_PORT="$PORT" $DETACH nohup java $JAVA_OPTS -jar "$JAR" >> "$LOG_FILE" 2>&1 < /dev/null &
+$DETACH nohup "$JAVA_BIN" $JAVA_OPTS -jar "$JAR" --server.port="$PORT" --spring.profiles.active="$PROFILE" \
+  >> "$LOG_FILE" 2>&1 < /dev/null &
 echo $! > "$PID_FILE"
 
 # 3. 기동 확인 (최대 90초)

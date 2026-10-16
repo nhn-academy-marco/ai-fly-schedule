@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.java21.flyschedule.dto.search.SearchCriteria;
 import net.java21.flyschedule.service.agent.AirportCodeAgent;
+import net.java21.flyschedule.service.ai.LenientJsonCleaner;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -41,7 +43,8 @@ public class FlightSearchPlanner {
                         """.formatted(MAX_TASKS, LocalDate.now(), LocalDate.now().getDayOfWeek()))
                 .user(message)
                 .call()
-                .entity(SearchPlan.class);
+                // 작은 모델이 JSON 앞뒤에 문장을 붙여도 JSON 부분만 읽는다
+                .entity(new BeanOutputConverter<>(SearchPlan.class, null, new LenientJsonCleaner()));
 
         return validate(plan);
     }

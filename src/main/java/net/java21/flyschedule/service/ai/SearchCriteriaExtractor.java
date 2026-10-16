@@ -3,6 +3,7 @@ package net.java21.flyschedule.service.ai;
 import lombok.extern.slf4j.Slf4j;
 import net.java21.flyschedule.dto.search.SearchCriteria;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -69,7 +70,8 @@ public class SearchCriteriaExtractor {
                         """.formatted(LocalDate.now()))
                 .user(message)
                 .call()
-                .entity(SearchCriteria.class);
+                // 작은 모델이 JSON 앞뒤에 문장을 붙여도 JSON 부분만 읽는다
+                .entity(new BeanOutputConverter<>(SearchCriteria.class, null, new LenientJsonCleaner()));
 
         if (criteria == null || !criteria.hasRoute()) {
             throw new IllegalArgumentException("출발 공항과 도착 공항을 찾지 못했습니다. 예: \"내일 광주에서 제주\"");

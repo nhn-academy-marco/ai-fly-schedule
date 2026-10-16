@@ -154,7 +154,7 @@ class SearchCriteriaExtractorTest {
     @DisplayName("정규식이 실패하면 LLM의 Structured Output을 사용한다")
     void usesLlmWhenRegexFails() {
         SearchCriteria fromLlm = new SearchCriteria("김포", "제주", "2026-03-27", null, null, null, null);
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(SearchCriteria.class))
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchCriteria>>any()))
                 .thenReturn(fromLlm);
 
         SearchCriteriaExtractor.Extraction extraction =
@@ -167,7 +167,7 @@ class SearchCriteriaExtractorTest {
     @Test
     @DisplayName("LLM도 출발·도착을 찾지 못하면 예외를 던진다")
     void llmWithoutRoute() {
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(SearchCriteria.class))
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchCriteria>>any()))
                 .thenReturn(new SearchCriteria(null, "제주", null, null, null, null, null));
 
         assertThatThrownBy(() -> extractor.extract("제주 가고 싶어", () -> chatClient))

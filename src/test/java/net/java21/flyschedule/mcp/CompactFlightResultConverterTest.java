@@ -26,12 +26,25 @@ class CompactFlightResultConverterTest {
                 flight("7C127", "제주항공", "1640", "1750", 0)));
         grouped.put("대한항공", List.of(flight("KE1235", "대한항공", "1500", "1610", 89000)));
 
-        String text = converter.convert(grouped, Map.class);
+        String text = converter.summarize(grouped);
 
         assertThat(text).isEqualTo("""
                 제주항공 2편: 7C125 14:25→15:35 51,400원 / 7C127 16:40→17:50 가격 없음
                 대한항공 1편: KE1235 15:00→16:10 89,000원
                 총 3편, 최저가 제주항공 7C125 51,400원""");
+    }
+
+    @Test
+    @DisplayName("결과는 {\"result\": ...} 형태의 올바른 JSON이다 (Gemini는 Tool 결과를 JSON으로 파싱한다)")
+    void wrapsAsJson() throws Exception {
+        Map<String, List<FlightInfoResponse>> grouped = Map.of("제주항공", List.of(flight("7C125", "제주항공", "1425", "1535", 51400)));
+
+        String json = converter.convert(grouped, Map.class);
+
+        Map<String, Object> parsed = new com.fasterxml.jackson.databind.ObjectMapper().readValue(json,
+                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { });
+        assertThat(parsed).containsOnlyKeys("result");
+        assertThat((String) parsed.get("result")).contains("7C125 14:25→15:35 51,400원");
     }
 
     @Test
@@ -51,7 +64,7 @@ class CompactFlightResultConverterTest {
     @Test
     @DisplayName("결과가 없으면 '항공편 없음'을, 항공편 Map이 아니면 기본 JSON 변환을 쓴다")
     void emptyAndFallback() {
-        assertThat(converter.convert(Map.of(), Map.class)).isEqualTo("조건에 맞는 항공편이 없습니다.");
+        assertThat(converter.convert(Map.of(), Map.class)).isEqualTo("{\"result\":\"조건에 맞는 항공편이 없습니다.\"}");
         assertThat(converter.convert("NAARKJJ", String.class)).isEqualTo("\"NAARKJJ\"");
     }
 }

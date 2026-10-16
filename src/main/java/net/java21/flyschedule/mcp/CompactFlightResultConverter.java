@@ -1,5 +1,7 @@
 package net.java21.flyschedule.mcp;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import net.java21.flyschedule.dto.response.FlightInfoResponse;
 import net.java21.flyschedule.dto.search.FlightView;
 import org.springframework.ai.tool.execution.DefaultToolCallResultConverter;
@@ -25,11 +27,15 @@ import java.util.stream.Collectors;
  * 총 3편, 최저가 제주항공 7C125 51,400원
  * </pre>
  *
+ * <p>결과는 {@code {"result": "..."}} 형태의 JSON 문자열로 감쌉니다. Gemini 연동(GoogleGenAiChatModel)은 Tool 결과를
+ * JSON으로 파싱해 함수 응답을 만들기 때문에, 일반 텍스트를 넘기면 "Failed to parse JSON" 오류가 납니다. (Ollama는 텍스트도 받음)
+ *
  * <p>화면에 보여 줄 결과는 ToolResultCapture가 원래 객체로 따로 보관하므로 영향을 받지 않습니다.
  */
 public class CompactFlightResultConverter implements ToolCallResultConverter {
 
     private final ToolCallResultConverter fallback = new DefaultToolCallResultConverter();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     @SuppressWarnings("unchecked")
@@ -37,7 +43,13 @@ public class CompactFlightResultConverter implements ToolCallResultConverter {
         if (!(result instanceof Map<?, ?> map)) {
             return fallback.convert(result, returnType);
         }
-        Map<String, List<FlightInfoResponse>> grouped = (Map<String, List<FlightInfoResponse>>) map;
+        return toJson(summarize((Map<String, List<FlightInfoResponse>>) map));
+    }
+
+    /**
+     * LLM이 읽을 짧은 문장 (JSON으로 감싸기 전)
+     */
+    String summarize(Map<String, List<FlightInfoResponse>> grouped) {
         List<FlightView> all = grouped.values().stream().flatMap(List::stream).map(FlightView::from).toList();
         if (all.isEmpty()) {
             return "조건에 맞는 항공편이 없습니다.";
@@ -56,6 +68,14 @@ public class CompactFlightResultConverter implements ToolCallResultConverter {
                 .map(flight -> ", 최저가 %s %s %,d원".formatted(flight.airline(), flight.flightId(), flight.price()))
                 .orElse("");
         return lines + "\n총 " + all.size() + "편" + cheapest;
+    }
+
+    private String toJson(String text) {
+        try {
+            return objectMapper.writeValueAsString(Map.of("result", text));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Tool 결과를 JSON으로 바꾸지 못했습니다.", e);
+        }
     }
 
     private static String line(FlightView flight) {

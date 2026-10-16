@@ -105,7 +105,7 @@ class FlightSearchCoordinatorTest {
     @Test
     @DisplayName("정규식이 실패하면 1단계만 LLM으로 처리하고, 나머지 순서는 그대로다")
     void llmOnlyForExtraction() {
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(SearchCriteria.class))
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchCriteria>>any()))
                 .thenReturn(new SearchCriteria("김포", "제주", "2026-03-27", null, null, null, null));
 
         SearchResponse response = coordinator.coordinate("이번 주 금요일 서울에서 제주도", "gemini");
@@ -143,7 +143,7 @@ class FlightSearchCoordinatorTest {
     @Test
     @DisplayName("LLM도 공항을 찾지 못하면 안내 메시지와 함께 실패한다")
     void failResponse() {
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(SearchCriteria.class))
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchCriteria>>any()))
                 .thenReturn(new SearchCriteria(null, null, null, null, null, null, null));
 
         SearchResponse response = coordinator.coordinate("비행기 표 알려줘", "ollama");

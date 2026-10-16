@@ -42,7 +42,7 @@ class FlightSearchPlannerTest {
         SearchPlan fromLlm = plan(
                 task("김포", "제주", "2026-03-27"), task("김포", "제주", "2026-03-28"),
                 task("광주", "제주", "2026-03-27"), task("광주", "제주", "2026-03-28"));
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(SearchPlan.class))
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchPlan>>any()))
                 .thenReturn(fromLlm);
 
         SearchPlan result = planner.plan("금요일이나 토요일에 김포나 광주에서 제주", chatClient);

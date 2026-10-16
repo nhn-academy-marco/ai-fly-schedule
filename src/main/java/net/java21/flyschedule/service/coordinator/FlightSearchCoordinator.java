@@ -70,7 +70,8 @@ public class FlightSearchCoordinator {
             try {
                 extraction = criteriaExtractor.extract(message, () -> chatClientProvider.get(model));
             } catch (RuntimeException e) {
-                trace.record(Kind.CODE, "SearchCriteriaExtractor", "검색 조건 추출", "실패: " + e.getMessage(), start);
+                // 정규식은 실패해도 예외를 던지지 않으므로, 여기로 오는 실패는 LLM 추출 단계에서 난 것이다
+                trace.record(Kind.LLM, "SearchCriteriaExtractor", "LLM으로 검색 조건 추출", "실패: " + e.getMessage(), start);
                 throw e;
             }
             trace.record(extraction.usedLlm() ? Kind.LLM : Kind.CODE, "SearchCriteriaExtractor",

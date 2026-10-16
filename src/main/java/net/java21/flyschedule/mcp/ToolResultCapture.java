@@ -1,7 +1,11 @@
 package net.java21.flyschedule.mcp;
 
+import net.java21.flyschedule.dto.search.ExecutionTrace;
+import net.java21.flyschedule.dto.search.TraceStep;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 /**
@@ -34,6 +38,8 @@ public final class ToolResultCapture {
     }
 
     private static final ThreadLocal<List<ToolCall>> CALLS = ThreadLocal.withInitial(ArrayList::new);
+    /** 연결된 실행 기록이 있으면 Tool이 실행되는 즉시 TOOL 단계로 남긴다 (화면에서 실시간으로 보임) */
+    private static final ThreadLocal<ExecutionTrace> LIVE_TRACE = new ThreadLocal<>();
 
     private ToolResultCapture() {
     }
@@ -46,12 +52,44 @@ public final class ToolResultCapture {
         long start = System.nanoTime();
         try {
             T result = action.get();
-            CALLS.get().add(new ToolCall(toolName, arguments, result, null, start, System.nanoTime()));
+            add(new ToolCall(toolName, arguments, result, null, start, System.nanoTime()));
             return result;
         } catch (RuntimeException e) {
-            CALLS.get().add(new ToolCall(toolName, arguments, null, e.getMessage(), start, System.nanoTime()));
+            add(new ToolCall(toolName, arguments, null, e.getMessage(), start, System.nanoTime()));
             throw e;
         }
+    }
+
+    /**
+     * 이 스레드에서 실행되는 Tool 호출을 trace에 바로 기록하도록 연결합니다. 끝나면 {@link #getAndClear()}로 풀립니다.
+     */
+    public static void bind(ExecutionTrace trace) {
+        LIVE_TRACE.set(trace);
+    }
+
+    private static void add(ToolCall call) {
+        CALLS.get().add(call);
+        ExecutionTrace trace = LIVE_TRACE.get();
+        if (trace != null) {
+            trace.record(TraceStep.Kind.TOOL, call.toolName(),
+                    call.failed() ? "Tool 실행 실패" : "LLM이 요청한 Tool 실행",
+                    call.arguments() + " → " + (call.failed() ? "실패: " + call.error() : summarize(call.result())),
+                    call.startNanos(), call.endNanos());
+        }
+    }
+
+    /**
+     * Tool 결과를 실행 기록에 남길 짧은 문장으로 바꿉니다. (예: "5개 항공사, 14편")
+     */
+    static String summarize(Object result) {
+        if (result instanceof Map<?, ?> map) {
+            int count = map.values().stream().mapToInt(v -> v instanceof List<?> list ? list.size() : 0).sum();
+            return map.size() + "개 항공사, " + count + "편";
+        }
+        if (result instanceof List<?> list) {
+            return list.size() + "건";
+        }
+        return String.valueOf(result);
     }
 
     /**
@@ -60,6 +98,7 @@ public final class ToolResultCapture {
     public static List<ToolCall> getAndClear() {
         List<ToolCall> calls = List.copyOf(CALLS.get());
         CALLS.remove();
+        LIVE_TRACE.remove();
         return calls;
     }
 }

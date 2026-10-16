@@ -56,6 +56,25 @@ class ToolResultCaptureTest {
     }
 
     @Test
+    @DisplayName("bind()로 연결한 실행 기록에는 Tool이 실행되는 즉시 TOOL 단계가 남고, getAndClear()로 연결이 풀린다")
+    void liveTrace() {
+        net.java21.flyschedule.dto.search.ExecutionTrace trace = new net.java21.flyschedule.dto.search.ExecutionTrace();
+        ToolResultCapture.bind(trace);
+
+        ToolResultCapture.capture("searchFlightsByAirline", "광주 → 제주, 2026-03-25",
+                () -> java.util.Map.of("제주항공", List.of("7C1402", "7C1404")));
+
+        assertThat(trace.steps()).singleElement().satisfies(step -> {
+            assertThat(step.kind()).isEqualTo(net.java21.flyschedule.dto.search.TraceStep.Kind.TOOL);
+            assertThat(step.detail()).isEqualTo("광주 → 제주, 2026-03-25 → 1개 항공사, 2편");
+        });
+
+        ToolResultCapture.getAndClear();
+        ToolResultCapture.capture("getAirportList", "전체", List::of);
+        assertThat(trace.steps()).hasSize(1); // 연결이 풀린 뒤에는 기록되지 않음
+    }
+
+    @Test
     @DisplayName("getAndClear() 뒤에는 기록이 비어 있다")
     void clearsAfterRead() {
         ToolResultCapture.capture("getAirlineList", "전체", List::of);

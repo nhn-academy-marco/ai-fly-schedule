@@ -35,12 +35,15 @@ public class GlobalExceptionHandler {
      * @param e 예외
      * @return 에러 응답
      */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleNotFound(org.springframework.web.servlet.resource.NoResourceFoundException e) {
+        return ApiResponse.error("요청한 경로를 찾을 수 없습니다: " + e.getResourcePath());
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleException(Exception e) {
-        if (e instanceof org.springframework.web.servlet.resource.NoResourceFoundException) {
-            return null;
-        }
         log.error("서버 에러", e);
         return ApiResponse.error("서버 오류가 발생했습니다: " + e.getMessage());
     }

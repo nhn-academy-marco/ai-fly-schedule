@@ -100,6 +100,8 @@ public class AirportCodeAgent {
         if (airportName == null || airportName.isBlank()) {
             return false;
         }
-        return AIRPORT_CODE_MAP.containsKey(airportName.trim());
+        String normalized = airportName.trim();
+        // getAirportCode()처럼 공항 코드(NAARKJJ 등)도 받는다
+        return AIRPORT_CODE_MAP.containsKey(normalized) || AIRPORT_CODE_MAP.containsValue(normalized);
     }
 }

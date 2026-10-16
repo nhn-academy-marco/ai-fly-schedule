@@ -1,19 +1,19 @@
 # 로컬에서 실행한 애플리케이션(./mvnw spring-boot:run)의 세 가지 검색 패턴을 호출합니다.
 # appUrl은 http-client.env.json에서 읽습니다. model은 "ollama" 또는 "gemini"입니다.
 
-### Coordinator 패턴 (Step 9) - 코드가 순서를 제어
+### Coordinator 패턴 (7장) - 코드가 순서를 제어
 POST {{appUrl}}/api/search/coordinator
 Content-Type: application/json
 
 {"message": "내일 광주에서 제주로 가는 항공편 알려줘", "model": "ollama"}
 
-### Tool Calling 에이전트 (Step 10) - LLM이 Tool 선택
+### Tool Calling Agent (8장) - LLM이 Tool 선택
 POST {{appUrl}}/api/search/tool-calling
 Content-Type: application/json
 
 {"message": "모레 김포에서 제주 오후 2시 이후 항공편", "model": "ollama"}
 
-### Orchestrator-Workers 패턴 (Step 11) - LLM이 작업을 나누고 종합
+### Orchestrator-Workers 패턴 (9장) - LLM이 작업을 나누고 종합
 POST {{appUrl}}/api/search/orchestrator
 Content-Type: application/json
 

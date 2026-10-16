@@ -78,7 +78,7 @@ class ToolCallingSearchServiceTest {
     }
 
     @Test
-    @DisplayName("LLM 호출 구간이 먼저 기록되고, 그 안에서 LLM이 요청한 Tool 호출이 순서대로 TOOL 단계로 기록된다")
+    @DisplayName("Tool은 실행되는 즉시 TOOL 단계로 기록되고, 그 전체를 감싸는 LLM 구간이 마지막에 기록된다")
     void recordsToolCalls() {
         when(airportListAgent.getAirportCode("광주")).thenReturn("NAARKJJ");
         when(flightSearchAgent.searchAndGroupByAirline("광주", "제주", "2026-03-25"))
@@ -95,12 +95,12 @@ class ToolCallingSearchServiceTest {
         assertThat(response.pattern()).isEqualTo("tool-calling");
         assertThat(response.message()).contains("7C1402");
         assertThat(response.trace()).extracting(TraceStep::kind)
-                .containsExactly(Kind.LLM, Kind.TOOL, Kind.TOOL);
+                .containsExactly(Kind.TOOL, Kind.TOOL, Kind.LLM);
         assertThat(response.trace()).extracting(TraceStep::actor)
-                .containsExactly("gemini", "getAirportCode", "searchFlightsByAirline");
+                .containsExactly("getAirportCode", "searchFlightsByAirline", "gemini");
         // Tool 실행 구간은 LLM 호출 구간 안에 있다 (타임라인에서 LLM 막대 안에 Tool 막대가 그려짐)
-        TraceStep llm = response.trace().get(0);
-        assertThat(response.trace().subList(1, 3)).allSatisfy(tool -> {
+        TraceStep llm = response.trace().get(2);
+        assertThat(response.trace().subList(0, 2)).allSatisfy(tool -> {
             assertThat(tool.startMs()).isGreaterThanOrEqualTo(llm.startMs());
             assertThat(tool.startMs() + tool.durationMs()).isLessThanOrEqualTo(llm.startMs() + llm.durationMs());
         });
@@ -193,8 +193,8 @@ class ToolCallingSearchServiceTest {
         SearchResponse response = service.search("서울에서 제주", "ollama");
 
         assertThat(response.trace()).extracting(TraceStep::title)
-                .containsExactly("Tool 선택과 답변 작성", "Tool 실행 실패", "LLM이 요청한 Tool 실행");
-        assertThat(response.trace().get(1).detail()).contains("실패: 알 수 없는 공항입니다: 서울");
+                .containsExactly("Tool 실행 실패", "LLM이 요청한 Tool 실행", "Tool 선택과 답변 작성");
+        assertThat(response.trace().get(0).detail()).contains("실패: 알 수 없는 공항입니다: 서울");
     }
 
     @Test
@@ -210,8 +210,28 @@ class ToolCallingSearchServiceTest {
 
         assertThat(response.success()).isFalse();
         assertThat(response.message()).contains("Ollama 연결 실패"); // 알 수 없는 오류는 원래 메시지를 보여 준다
-        assertThat(response.trace()).extracting(TraceStep::actor).containsExactly("searchFlightsByAirline");
+        // 실패 전까지 실행된 Tool과, 실패한 LLM 구간이 모두 남는다
+        assertThat(response.trace()).extracting(TraceStep::actor).containsExactly("searchFlightsByAirline", "ollama");
+        assertThat(response.trace().get(1).detail()).startsWith("실패");
         assertThat(ToolResultCapture.getAndClear()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Tool 단계는 LLM 호출이 끝나기 전에 이미 실행 기록에 나타난다 (화면 실시간 표시)")
+    void toolStepsAppearWhileLlmIsRunning() {
+        when(flightSearchAgent.searchAndGroupByAirline(anyString(), anyString(), anyString())).thenReturn(Map.of());
+        net.java21.flyschedule.dto.search.ExecutionTrace trace = new net.java21.flyschedule.dto.search.ExecutionTrace();
+        java.util.List<Integer> stepsSeenBeforeAnswer = new java.util.ArrayList<>();
+        llmCallsToolsThenAnswers(() -> {
+            flightSearchTool.searchFlightsByAirline("광주", "제주", "2026-03-25");
+            stepsSeenBeforeAnswer.add(trace.steps().size()); // LLM이 답변을 쓰기 전 시점
+            return "답변";
+        });
+
+        service.search("광주에서 제주", "ollama", trace);
+
+        assertThat(stepsSeenBeforeAnswer).containsExactly(1);
+        assertThat(trace.steps()).extracting(TraceStep::kind).containsExactly(Kind.TOOL, Kind.LLM);
     }
 
     @Test

@@ -55,9 +55,10 @@ public class ToolCallingSearchService {
      */
     public SearchResponse search(String message, String model, ExecutionTrace trace) {
         ToolResultCapture.getAndClear(); // 이전 요청의 기록이 남아 있지 않도록 비운다
+        ToolResultCapture.bind(trace);   // Tool이 실행되는 즉시 TOOL 단계로 기록 (화면에서 실시간으로 보임)
 
+        long start = System.nanoTime();
         try {
-            long start = System.nanoTime();
             String answer = chatClientProvider.get(model).prompt()
                     .system(systemPrompt())
                     .user(message)
@@ -65,11 +66,10 @@ public class ToolCallingSearchService {
                     .call()
                     .content();
 
-            // LLM 호출 구간을 먼저, 그 안에서 실행된 Tool 호출을 이어서 기록한다
+            // Tool 단계는 실행될 때 이미 기록됐다. LLM 호출 구간(Tool 실행을 감싸는 전체 구간)을 마지막에 남긴다
             List<ToolCall> calls = ToolResultCapture.getAndClear();
             trace.record(Kind.LLM, ChatClientProvider.normalize(model),
                     "Tool 선택과 답변 작성", "Tool " + calls.size() + "회 호출 후 답변", start);
-            recordToolCalls(calls, trace);
 
             if (calls.isEmpty()) {
                 return SearchResponse.fail(PATTERN,
@@ -81,33 +81,30 @@ public class ToolCallingSearchService {
             return SearchResponse.success(PATTERN, text, result == null ? List.of() : List.of(result), trace);
 
         } catch (IllegalArgumentException e) {
-            recordToolCalls(ToolResultCapture.getAndClear(), trace);
+            ToolResultCapture.getAndClear();
             return SearchResponse.fail(PATTERN, e.getMessage(), trace);
         } catch (Exception e) {
             log.error("Tool Calling 검색 실패 (model={})", model, e);
-            recordToolCalls(ToolResultCapture.getAndClear(), trace); // 실패 전까지 실행된 Tool도 남기고, ThreadLocal을 비운다
+            ToolResultCapture.getAndClear(); // 실패 전까지 실행된 Tool은 이미 기록됐다. ThreadLocal만 비운다
+            trace.record(Kind.LLM, ChatClientProvider.normalize(model), "Tool 선택과 답변 작성",
+                    "실패: " + ChatClientProvider.describeError(e), start);
             return SearchResponse.fail(PATTERN, ChatClientProvider.describeError(e), trace);
         }
     }
 
-    private static void recordToolCalls(List<ToolCall> calls, ExecutionTrace trace) {
-        calls.forEach(call -> trace.record(Kind.TOOL, call.toolName(),
-                call.failed() ? "Tool 실행 실패" : "LLM이 요청한 Tool 실행",
-                call.arguments() + " → " + (call.failed() ? "실패: " + call.error() : describe(call.result())),
-                call.startNanos(), call.endNanos()));
-    }
 
     private String systemPrompt() {
         return """
                 당신은 국내선 항공편 검색 도우미입니다. 반드시 한국어로 답변하세요.
                 항공편 정보는 반드시 Tool을 호출해서 얻고, Tool 결과에 없는 내용은 지어내지 마세요.
-                오늘 날짜: %s
+                오늘: %s (%s)
                 규칙:
                 - 날짜는 "2026-06-25" 형식으로 Tool에 전달합니다.
                 - 시간은 24시간 형식("14:00")으로 전달합니다.
                 - 공항은 한글 이름 그대로 전달합니다. (예: "광주", "제주")
                 - 답변은 항공편 수와 가장 저렴한 항공편을 중심으로 3~4문장으로 요약합니다.
-                """.formatted(LocalDate.now());
+                """.formatted(LocalDate.now(), LocalDate.now().getDayOfWeek()
+                        .getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.KOREAN));
     }
 
     /**
@@ -125,14 +122,4 @@ public class ToolCallingSearchService {
         return null;
     }
 
-    private static String describe(Object result) {
-        if (result instanceof Map<?, ?> map) {
-            int count = map.values().stream().mapToInt(v -> v instanceof List<?> list ? list.size() : 0).sum();
-            return map.size() + "개 항공사, " + count + "편";
-        }
-        if (result instanceof List<?> list) {
-            return list.size() + "건";
-        }
-        return String.valueOf(result);
-    }
 }

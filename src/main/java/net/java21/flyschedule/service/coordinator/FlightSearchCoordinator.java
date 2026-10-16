@@ -56,7 +56,13 @@ public class FlightSearchCoordinator {
     private final GroupingAgent groupingAgent;
 
     public SearchResponse coordinate(String message, String model) {
-        ExecutionTrace trace = new ExecutionTrace();
+        return coordinate(message, model, new ExecutionTrace());
+    }
+
+    /**
+     * 실행 기록(trace)을 밖에서 넘겨받는 버전. 실행 중에도 trace를 읽어 진행 상황을 보여 줄 수 있습니다. (SearchJobService)
+     */
+    public SearchResponse coordinate(String message, String model, ExecutionTrace trace) {
         try {
             // 1단계: 검색 조건 추출 (정규식이 실패하면 LLM)
             long start = System.nanoTime();
@@ -71,7 +77,7 @@ public class FlightSearchCoordinator {
                     extraction.usedLlm() ? "LLM으로 검색 조건 추출" : "정규식으로 검색 조건 추출",
                     extraction.criteria().label(), start);
 
-            // 2~7단계: 정해진 순서대로 전문 에이전트 호출
+            // 2~7단계: 정해진 순서대로 전문 Agent 호출
             TaskResult result = search(extraction.criteria(), trace);
 
             String summary = result.isEmpty() ? "조건에 맞는 항공편이 없습니다." : result.summaryLine();

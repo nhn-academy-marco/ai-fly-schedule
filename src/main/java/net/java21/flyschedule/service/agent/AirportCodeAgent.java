@@ -7,7 +7,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 공항 코드 매핑 전문 에이전트
+ * 공항 코드 매핑 전문 Agent
  *
  * 공항 이름을 공항 코드로 변환합니다.
  */

@@ -16,7 +16,7 @@ import java.util.Map;
  * 항공편 검색 MCP Tool
  *
  * Spring AI의 @Tool annotation을 사용하여 AI 모델이 호출할 수 있는 도구를 정의합니다.
- * 실제 검색은 전문 에이전트(FlightSearchAgent)에게 맡기고 결과를 반환합니다.
+ * 실제 검색은 전문 Agent(FlightSearchAgent)에게 맡기고 결과를 반환합니다.
  */
 @Slf4j
 @Component

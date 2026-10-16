@@ -10,7 +10,7 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 /**
- * 그룹핑 전문 에이전트
+ * 그룹핑 전문 Agent
  *
  * 항공편을 항공사별로 그룹핑합니다.
  */

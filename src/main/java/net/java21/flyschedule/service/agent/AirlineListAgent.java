@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 항공사 목록 조회 전문 에이전트
+ * 항공사 목록 조회 전문 Agent
  *
  * 항공사 정보를 조회하고 항공사 코드를 매핑합니다.
  */

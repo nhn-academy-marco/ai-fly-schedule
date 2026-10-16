@@ -31,7 +31,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tool Calling 에이전트 테스트
+ * Tool Calling Agent 테스트
  *
  * <p>실제 LLM 대신, {@code call().content()}가 호출될 때 "LLM이 Tool을 요청한 것처럼" Tool 메서드를 직접 실행하는
  * 가짜 응답을 만듭니다. 이렇게 하면 Tool 호출 기록과 결과 처리 로직을 LLM 없이 검증할 수 있습니다.

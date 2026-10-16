@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 가격 필터링 전문 에이전트
+ * 가격 필터링 전문 Agent
  *
  * 운임을 기준으로 항공편을 필터링합니다.
  */

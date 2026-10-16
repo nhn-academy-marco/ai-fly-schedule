@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * 시간 필터링 전문 에이전트
+ * 시간 필터링 전문 Agent
  *
  * 출발 시간을 기준으로 항공편을 필터링합니다.
  */

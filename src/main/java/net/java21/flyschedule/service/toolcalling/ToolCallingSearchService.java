@@ -21,11 +21,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Tool Calling 에이전트: LLM이 제어하는 검색
+ * Tool Calling Agent: LLM이 제어하는 검색
  *
  * <p>코드는 LLM에게 질문과 사용할 수 있는 Tool 목록만 넘깁니다.
  * 어떤 Tool을 어떤 인자로 몇 번 부를지는 LLM이 결정하고, Spring AI가 그 요청대로 Tool을 실행합니다.
- * LLM 하나가 Tool을 쓰는 단일 에이전트이며, 여러 에이전트가 서로 통신하는 구조(A2A 프로토콜)와는 다릅니다.
+ * LLM 하나가 Tool을 쓰는 단일 Agent이며, 여러 Agent가 서로 통신하는 구조(A2A 프로토콜)와는 다릅니다.
  *
  * <pre>
  * ChatClient.call()
@@ -47,7 +47,13 @@ public class ToolCallingSearchService {
     private final AirlineInfoTool airlineInfoTool;
 
     public SearchResponse search(String message, String model) {
-        ExecutionTrace trace = new ExecutionTrace();
+        return search(message, model, new ExecutionTrace());
+    }
+
+    /**
+     * 실행 기록(trace)을 밖에서 넘겨받는 버전. 실행 중에도 trace를 읽어 진행 상황을 보여 줄 수 있습니다. (SearchJobService)
+     */
+    public SearchResponse search(String message, String model, ExecutionTrace trace) {
         ToolResultCapture.getAndClear(); // 이전 요청의 기록이 남아 있지 않도록 비운다
 
         try {

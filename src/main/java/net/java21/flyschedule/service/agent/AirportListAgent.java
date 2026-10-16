@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 공항 목록 조회 전문 에이전트
+ * 공항 목록 조회 전문 Agent
  *
  * 공항 정보를 조회하고 공항 코드를 매핑합니다.
  */

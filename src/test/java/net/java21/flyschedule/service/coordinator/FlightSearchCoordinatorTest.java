@@ -36,7 +36,7 @@ import static org.mockito.Mockito.when;
 /**
  * Coordinator 패턴 테스트
  *
- * <p>외부 API(ApiClientService)와 LLM(ChatClient)만 가짜로 바꾸고, 전문 에이전트는 실제 객체를 사용합니다.
+ * <p>외부 API(ApiClientService)와 LLM(ChatClient)만 가짜로 바꾸고, 전문 Agent는 실제 객체를 사용합니다.
  */
 @DisplayName("FlightSearchCoordinator 테스트")
 class FlightSearchCoordinatorTest {
@@ -65,7 +65,7 @@ class FlightSearchCoordinatorTest {
     }
 
     @Test
-    @DisplayName("코드가 정한 순서대로 에이전트를 호출하고, 모든 단계가 CODE로 기록된다")
+    @DisplayName("코드가 정한 순서대로 Agent를 호출하고, 모든 단계가 CODE로 기록된다")
     void fixedOrderAllCode() {
         SearchResponse response = coordinator.coordinate("내일 광주에서 제주로 가는 항공편", "ollama");
 

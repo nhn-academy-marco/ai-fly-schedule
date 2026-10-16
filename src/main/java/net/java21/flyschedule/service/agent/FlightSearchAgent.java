@@ -11,9 +11,9 @@ import java.util.*;
 import java.util.function.UnaryOperator;
 
 /**
- * 항공편 검색 전문 에이전트
+ * 항공편 검색 전문 Agent
  *
- * 여러 하위 에이전트를 조율하여 항공편 검색 작업을 수행합니다.
+ * 여러 하위 Agent를 조율하여 항공편 검색 작업을 수행합니다.
  * - DateParserAgent: 날짜 파싱
  * - AirportCodeAgent: 공항 코드 변환
  * - TimeFilterAgent: 시간 필터링

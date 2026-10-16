@@ -8,7 +8,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 
 /**
- * 날짜 파싱 전문 에이전트
+ * 날짜 파싱 전문 Agent
  *
  * 사용자의 자연어 날짜 표현을 API 요청 형식으로 변환합니다.
  * 지원하는 표현: "내일", "모레", "글피", "2026-03-25"

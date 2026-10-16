@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  * </pre>
  *
  * <p>Coordinator 패턴과 달리 하위 작업의 개수와 내용이 미리 정해져 있지 않습니다.
- * Tool Calling 에이전트와 달리 LLM은 계획과 종합만 하고, 실행은 코드(Worker)가 병렬로 맡습니다.
+ * Tool Calling Agent와 달리 LLM은 계획과 종합만 하고, 실행은 코드(Worker)가 병렬로 맡습니다.
  */
 @Slf4j
 @Service
@@ -42,7 +42,13 @@ public class FlightSearchOrchestrator {
     private final ResultSynthesizer synthesizer;
 
     public SearchResponse orchestrate(String message, String model) {
-        ExecutionTrace trace = new ExecutionTrace();
+        return orchestrate(message, model, new ExecutionTrace());
+    }
+
+    /**
+     * 실행 기록(trace)을 밖에서 넘겨받는 버전. 실행 중에도 trace를 읽어 진행 상황을 보여 줄 수 있습니다. (SearchJobService)
+     */
+    public SearchResponse orchestrate(String message, String model, ExecutionTrace trace) {
         String modelName = ChatClientProvider.normalize(model);
 
         try {

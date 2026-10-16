@@ -12,7 +12,7 @@ Spring AI 1.1.4로 LLM 애플리케이션의 대표적인 세 가지 구조를 �
 - 한 문장을 입력하고 **실행하기**로 세 패턴의 결과를 나란히 비교합니다. `/?q=문장&model=ollama&patterns=coordinator,orchestrator&run=1`처럼 주소에 조건을 붙이면 채워진 채로 바로 실행됩니다.
 - 단계마다 CODE, LLM, TOOL, WORKER로 구분한 실행 기록 타임라인이 실시간으로 쌓입니다.
 - Orchestrator-Workers 패턴에서는 Worker가 가상 스레드로 병렬 실행되는 모습을 볼 수 있습니다.
-- LLM은 Ollama(`qwen2.5:3b-instruct-q4_K_M`)와 Gemini(`gemini-2.5-flash`) 중에서 고릅니다.
+- LLM은 Ollama(`qwen2.5:3b-instruct-q4_K_M`)와 Gemini(`gemini-3.5-flash-lite`, 무료 등급) 중에서 고릅니다.
 
 | 패턴 | 다음 단계를 누가 정하나 | 한 요청의 LLM 호출 | 엔드포인트 | 교재 |
 |---|---|---|---|---|
@@ -49,7 +49,7 @@ Maven은 저장소에 들어 있는 `./mvnw`를 쓰면 따로 설치하지 않�
 | 환경 변수 | 필수 여부 | 설명 |
 |---|---|---|
 | `DATA_GO_KR_SERVICE_KEY` | 필수 | 공공데이터 포털 서비스 키(항공편·공항·항공사 조회) |
-| `GOOGLE_GENAI_API_KEY` | 선택 | Gemini API 키. 없어도 앱은 정상으로 시작하며, 화면에서 Gemini를 고르면 키를 설정하라는 안내가 나옵니다 |
+| `GOOGLE_GENAI_API_KEY` | 선택 | Gemini API 키. 없어도 앱은 정상으로 시작하며, 화면에서 Gemini를 고르면 키를 설정하라는 안내가 나옵니다. 빈 문자열로 설정하면 기동에 실패하므로 쓰지 않을 때는 `unset`합니다 |
 
 ```bash
 export DATA_GO_KR_SERVICE_KEY="발급받은_공공데이터_포털_서비스_키"
@@ -97,8 +97,8 @@ ollama pull qwen2.5:3b-instruct-q4_K_M
 
 `main` 브랜치에 push하면 GitHub Actions([.github/workflows/maven.yml](./.github/workflows/maven.yml))가 서비스 키 확인 → JDK 21 빌드(`-DskipTests`) → `deploy/startup.sh`와 `target/fly.jar` 업로드 → 서버에서 `startup.sh` 실행까지 진행합니다. Pull request에서는 빌드만 합니다.
 
-- GitHub Secrets: `SSH_IP`, `SSH_ID`, `SSH_PASSWORD`, `SSH_PORT`, `DATA_GO_KR_SERVICE_KEY`
-- Gemini 키(선택): 서버의 `~/fly-schedule/.env`에 `GOOGLE_GENAI_API_KEY=...`
+- GitHub Secrets: `SSH_IP`, `SSH_ID`, `SSH_PASSWORD`, `SSH_PORT`, `DATA_GO_KR_SERVICE_KEY`, `GOOGLE_GENAI_API_KEY`(선택)
+- Gemini 키(선택): GitHub Secret 또는 서버의 `~/fly-schedule/.env`에 `GOOGLE_GENAI_API_KEY=...`. 값이 비어 있으면 `startup.sh`가 변수를 지워 Ollama만으로 기동합니다
 - `startup.sh`: 포트를 `SERVER_PORT` → `startup.sh.orig` → nginx `proxy_pass` → `10600` 순서로 정하고, Java 21과 `prod` 프로필로 기동한 뒤 최대 90초 동안 응답을 확인합니다.
 - nginx는 `proxy_read_timeout 300s`를 권장합니다. 기본 60초에서는 LLM 호출이 긴 동기 API가 504로 끊깁니다.
 
@@ -110,7 +110,7 @@ ollama pull qwen2.5:3b-instruct-q4_K_M
 |---|---|
 | 언어·프레임워크 | Java 21, Spring Boot 3.5.11, Spring Web MVC, Lombok, Maven |
 | AI | Spring AI 1.1.4 (ChatClient, Tool Calling, Structured Output, Advisor) |
-| LLM | Ollama `qwen2.5:3b-instruct-q4_K_M`, Google Gemini `gemini-2.5-flash` |
+| LLM | Ollama `qwen2.5:3b-instruct-q4_K_M`, Google Gemini `gemini-3.5-flash-lite` |
 | 외부 API | 공공데이터 포털 국내항공운항정보 (`RestClient`) |
 | 동시성 | Java 21 가상 스레드 (Worker 병렬 실행, 작업 API) |
 | 화면 | 단일 페이지 `templates/index.html` (HTML/CSS/JavaScript, Fetch API) |

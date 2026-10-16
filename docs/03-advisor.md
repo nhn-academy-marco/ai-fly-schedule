@@ -1,6 +1,6 @@
 # 3장 Advisor로 LLM 호출 들여다보기
 
-검색 화면에 "다음 주 금요일 광주에서 제주"를 넣었는데 엉뚱한 날짜로 검색되었다고 해 봅시다. 원인은 어디에 있을까요? 프롬프트에 오늘 날짜가 빠졌을 수도 있고, LLM이 JSON을 잘못 만들었을 수도 있고, 우리 코드가 응답을 잘못 읽었을 수도 있습니다. 실제로 LLM에 **무엇을 보냈고 무엇을 받았는지** 보지 않고는 어느 쪽인지 알 수 없습니다.
+검색 화면에 "주말에 광주에서 제주"를 넣었는데 엉뚱한 날짜로 검색되었다고 해 봅시다. 원인은 어디에 있을까요? 프롬프트에 오늘 날짜가 빠졌을 수도 있고, LLM이 JSON을 잘못 만들었을 수도 있고, 우리 코드가 응답을 잘못 읽었을 수도 있습니다. 실제로 LLM에 **무엇을 보냈고 무엇을 받았는지** 보지 않고는 어느 쪽인지 알 수 없습니다.
 
 이 책은 "다음 단계를 누가 결정하는가 — 코드인가, LLM인가?"를 묻습니다. 그 질문에 답하려면 먼저 결정 과정을 **볼 수 있어야** 합니다. 이 장에서는 ChatClient 호출 앞뒤에 끼어드는 **Advisor**로 LLM 호출을 들여다보고, Advisor로도 보이지 않는 부분이 어디인지 확인합니다. 그 빈틈이 이 책의 실행 기록(trace)이 생겨난 이유입니다.
 
@@ -66,15 +66,15 @@ public ChatClient ollamaChatClient(@Qualifier("ollamaChatModel") ChatModel ollam
 >   -Dspring-boot.run.arguments=--logging.level.org.springframework.ai.chat.client.advisor=DEBUG
 > ```
 >
-> 다른 터미널에서 Coordinator 패턴을 부릅니다. "다음 주 금요일"처럼 계산이 필요한 날짜는 정규식이 처리하지 않고 LLM에 넘기므로(7장) LLM 호출이 한 번 일어납니다.
+> 다른 터미널에서 Coordinator 패턴을 부릅니다. "주말"처럼 코드가 날짜 하나로 정하지 못하는 표현은 정규식이 처리하지 않고 LLM에 넘기므로([7장](07-coordinator.md)) LLM 호출이 한 번 일어납니다.
 >
 > ```bash
 > curl -X POST http://localhost:8080/api/search/coordinator \
 >   -H "Content-Type: application/json" \
->   -d '{"message": "다음 주 금요일 광주에서 제주", "model": "ollama"}'
+>   -d '{"message": "주말에 광주에서 제주", "model": "ollama"}'
 > ```
 >
-> 기대 결과(콘솔, 줄여서 표시): `SimpleLoggerAdvisor - request: ChatClientRequest[prompt=Prompt{messages=[SystemMessage{...오늘 날짜...}, UserMessage{content='다음 주 금요일 광주에서 제주' ...` 다음에 `SimpleLoggerAdvisor - response: {...}` 한 줄이 이어집니다. 요청 안에 오늘 날짜가 들어 있는지 찾아보세요. 날짜 계산이 틀렸다면 가장 먼저 볼 곳이 여기입니다.
+> 기대 결과(콘솔, 줄여서 표시): `SimpleLoggerAdvisor - request: ChatClientRequest[prompt=Prompt{messages=[SystemMessage{...날짜표...}, UserMessage{content='주말에 광주에서 제주' ...` 다음에 `SimpleLoggerAdvisor - response: {...}` 한 줄이 이어집니다. 요청 안에 오늘 날짜와 날짜표가 들어 있는지 찾아보세요. 날짜 계산이 틀렸다면 가장 먼저 볼 곳이 여기입니다.
 
 > **팁**: "내일 광주에서 제주"처럼 정규식으로 끝나는 문장은 LLM을 부르지 않으므로 Advisor 로그도 없습니다. 로그가 안 나온다고 설정부터 의심하지 말고, 그 요청이 정말 LLM을 불렀는지 먼저 확인하세요.
 
@@ -229,7 +229,7 @@ Advisor가 여럿이면 순서가 결과를 바꿉니다. 캐시 Advisor가 로�
 ## 연습 문제
 
 **1. [기본] Advisor 로그 사이에서 Tool 실행 찾기**
-Advisor 로거와 함께 Spring AI의 Tool 실행 로거도 DEBUG로 올려 실행합니다(`--logging.level.org.springframework.ai.model.tool=DEBUG`를 인자에 추가). 그다음 Coordinator("다음 주 금요일 광주에서 제주")와 Tool Calling("내일 광주에서 제주")을 한 번씩 부릅니다.
+Advisor 로거와 함께 Spring AI의 Tool 실행 로거도 DEBUG로 올려 실행합니다(`--logging.level.org.springframework.ai.model.tool=DEBUG`를 인자에 추가). 그다음 Coordinator("주말에 광주에서 제주")와 Tool Calling("내일 광주에서 제주")을 한 번씩 부릅니다.
 - 힌트: `DefaultToolCallingManager`가 남기는 `Executing tool call: ...` 로그를 찾습니다. request 로그의 `modelOptions`는 객체 이름만 찍혀서, Tool 목록이 실렸는지는 request 로그만으로 알기 어렵습니다.
 - 완료 기준: Tool Calling 요청에서는 request와 response 로그 사이에 `Executing tool call: searchFlightsByAirline`이 있고, Coordinator 요청에는 없다는 것을 로그 일부를 인용해 보인다.
 

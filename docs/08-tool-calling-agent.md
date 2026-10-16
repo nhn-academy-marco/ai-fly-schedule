@@ -12,7 +12,7 @@ Tool Calling Agent는 LLM 하나가 Tool 목록을 받아 다음 세 가지를 �
 
 | 결정 | 예 |
 |---|---|
-| **어떤 Tool**을 부를지 | `searchFlightsByAirline`인가, `searchFlightsAfterTime`인가, 먼저 `getAirportCode`를 부를 것인가 |
+| **어떤 Tool**을 부를지 | `searchFlightsByAirline`인가, `searchFlightsAfterTime`인가, `searchFlightsByPriceRange`인가 |
 | **어떤 인자**로 부를지 | "모레" → `"2026-10-18"`, "오후 2시" → `"14:00"` |
 | **몇 번** 부를지 | 한 번으로 끝낼지, 결과를 보고 다른 Tool을 더 부를지 |
 
@@ -25,62 +25,65 @@ Tool Calling Agent는 LLM 하나가 Tool 목록을 받아 다음 세 가지를 �
 | 처음 보는 표현("저녁 비행기") | 정규식에 없으면 LLM fallback 또는 실패 | LLM이 해석해 볼 수 있음 |
 | 같은 입력의 결과 | 항상 같음 | 실행마다 달라질 수 있음 |
 
-LLM이 Tool을 직접 실행하지는 않는다는 점은 [4장](04-tool-calling.md)에서 보았습니다. LLM은 "이 Tool을 이 인자로 불러 달라"고 **요청**하고, 실행은 Spring AI가 맡습니다. 이 장에서 쓰는 Tool 7개는 [5장](05-domain-tools.md)에서 만든 `FlightSearchTool`, `AirportInfoTool`, `AirlineInfoTool`입니다.
+LLM이 Tool을 직접 실행하지는 않는다는 점은 [4장](04-tool-calling.md)에서 보았습니다. LLM은 "이 Tool을 이 인자로 불러 달라"고 **요청**하고, 실행은 Spring AI가 맡습니다. 이 장에서 LLM에게 넘기는 Tool은 [5장](05-domain-tools.md)에서 만든 `FlightSearchTool`의 항공편 검색 Tool 3개입니다. 공항·항공사 조회 Tool은 넘기지 않습니다(이유는 5장, 효과는 8.9).
 
 ## 8.2 ToolCallingSearchService — 코드에 if 문이 없다
 
 `src/main/java/net/java21/flyschedule/service/toolcalling/ToolCallingSearchService.java`
 
 ```java
-public SearchResponse search(String message, String model, ExecutionTrace trace) {
-    ToolResultCapture.getAndClear(); // 이전 요청의 기록이 남아 있지 않도록 비운다
-    ToolResultCapture.bind(trace);   // Tool이 실행되는 즉시 TOOL 단계로 기록 (화면에서 실시간으로 보임)
+    public SearchResponse search(String message, String model, ExecutionTrace trace) {
+        ToolResultCapture.getAndClear(); // 이전 요청의 기록이 남아 있지 않도록 비운다
+        ToolResultCapture.bind(trace);   // Tool이 실행되는 즉시 TOOL 단계로 기록 (화면에서 실시간으로 보임)
 
-    long start = System.nanoTime();
-    try {
-        String answer = chatClientProvider.get(model).prompt()
-                .system(systemPrompt())
-                .user(message)
-                .tools(flightSearchTool, airportInfoTool, airlineInfoTool)
-                .call()
-                .content();
+        long start = System.nanoTime();
+        try {
+            String answer = chatClientProvider.get(model).prompt()
+                    .system(systemPrompt())
+                    .user(DateContext.annotate(message)) // 날짜 표현 옆에 코드가 계산한 날짜를 붙여 보낸다
+                    // 항공편 검색 Tool 3개만 넘긴다. 공항·항공사 조회 Tool(AirportInfoTool, AirlineInfoTool)은
+                    // 검색 Tool이 한글 공항 이름을 직접 받으므로 필요 없고, 넘기면 LLM이 매번 읽어야 할 Tool 설명만 늘어난다
+                    .tools(flightSearchTool)
+                    .call()
+                    .content();
 
-        // Tool 단계는 실행될 때 이미 기록됐다. LLM 호출 구간(Tool 실행을 감싸는 전체 구간)을 마지막에 남긴다
-        List<ToolCall> calls = ToolResultCapture.getAndClear();
-        trace.record(Kind.LLM, ChatClientProvider.normalize(model),
-                "Tool 선택과 답변 작성", "Tool " + calls.size() + "회 호출 후 답변", start);
+            // Tool 단계는 실행될 때 이미 기록됐다. LLM 호출 구간(Tool 실행을 감싸는 전체 구간)을 마지막에 남긴다
+            List<ToolCall> calls = ToolResultCapture.getAndClear();
+            trace.record(Kind.LLM, ChatClientProvider.normalize(model),
+                    "Tool 선택과 답변 작성", "Tool " + calls.size() + "회 호출 후 답변", start);
 
-        if (calls.isEmpty()) {
-            return SearchResponse.fail(PATTERN,
-                    StringUtils.hasText(answer) ? answer : "LLM이 Tool을 호출하지 않았습니다.", trace);
+            if (calls.isEmpty()) {
+                return SearchResponse.fail(PATTERN,
+                        StringUtils.hasText(answer) ? answer : "LLM이 Tool을 호출하지 않았습니다.", trace);
+            }
+
+            TaskResult result = lastFlightResult(calls);
+            String text = StringUtils.hasText(answer) ? answer : "검색을 마쳤습니다.";
+            return SearchResponse.success(PATTERN, text, result == null ? List.of() : List.of(result), trace);
+
+        } catch (IllegalArgumentException e) {
+            ToolResultCapture.getAndClear();
+            return SearchResponse.fail(PATTERN, e.getMessage(), trace);
+        } catch (Exception e) {
+            log.error("Tool Calling 검색 실패 (model={})", model, e);
+            ToolResultCapture.getAndClear(); // 실패 전까지 실행된 Tool은 이미 기록됐다. ThreadLocal만 비운다
+            trace.record(Kind.LLM, ChatClientProvider.normalize(model), "Tool 선택과 답변 작성",
+                    "실패: " + ChatClientProvider.describeError(e), start);
+            return SearchResponse.fail(PATTERN, ChatClientProvider.describeError(e), trace);
         }
-
-        TaskResult result = lastFlightResult(calls);
-        String text = StringUtils.hasText(answer) ? answer : "검색을 마쳤습니다.";
-        return SearchResponse.success(PATTERN, text, result == null ? List.of() : List.of(result), trace);
-
-    } catch (IllegalArgumentException e) {
-        ToolResultCapture.getAndClear();
-        return SearchResponse.fail(PATTERN, e.getMessage(), trace);
-    } catch (Exception e) {
-        log.error("Tool Calling 검색 실패 (model={})", model, e);
-        ToolResultCapture.getAndClear(); // 실패 전까지 실행된 Tool은 이미 기록됐다. ThreadLocal만 비운다
-        trace.record(Kind.LLM, ChatClientProvider.normalize(model), "Tool 선택과 답변 작성",
-                "실패: " + ChatClientProvider.describeError(e), start);
-        return SearchResponse.fail(PATTERN, ChatClientProvider.describeError(e), trace);
     }
-}
 ```
 
 코드 읽기
 
 1. `ToolResultCapture.bind(trace)`: 이 작업의 실행 기록을 현재 스레드에 연결합니다. 이제 `call()` 안에서 Tool이 실행될 때마다 그 즉시 TOOL 단계가 `trace`에 쌓입니다(8.6).
 2. `chatClientProvider.get(model)`: 화면에서 고른 모델(Ollama 또는 Gemini)의 `ChatClient`를 돌려줍니다([2장](02-chatclient.md)). Gemini 키가 없으면 `IllegalArgumentException`이 나고, 첫 번째 `catch`가 그 안내 문장을 그대로 응답합니다.
-3. `.tools(...)`: 이 요청에서 LLM이 쓸 수 있는 Tool 객체 3개(메서드 7개)를 넘깁니다.
-4. `.call().content()`: Tool 호출이 몇 번 오가든 모두 끝난 뒤 최종 답변 문자열만 돌려줍니다.
-5. `ToolResultCapture.getAndClear()`: `call()` 동안 실행된 Tool의 이름·인자·결과·실행 구간을 꺼내고, `bind`로 맺은 연결도 풉니다. 꺼낸 기록은 Tool 호출 횟수와 화면용 결과를 만드는 데 씁니다. 이어서 `call()` 전체 구간을 LLM 단계로 **마지막에** 기록합니다.
-6. LLM 호출이 실패하면(두 번째 `catch`) LLM 단계를 "실패: ..."로 남깁니다. 그 전에 실행된 TOOL 단계는 이미 기록되어 있으므로 그대로 남습니다.
-7. Tool을 한 번도 부르지 않았으면 실패로 처리합니다. 이유는 8.4에서 봅니다.
+3. `.user(DateContext.annotate(message))`: 사용자 문장을 그대로 보내지 않고, "이번 주 토요일" 같은 표현 옆에 코드가 계산한 날짜를 붙여 보냅니다(8.4).
+4. `.tools(flightSearchTool)`: 이 요청에서 LLM이 쓸 수 있는 Tool로 `FlightSearchTool` 객체 하나(검색 메서드 3개)를 넘깁니다. 주석대로, 쓰지 않는 Tool을 넘기면 LLM이 매번 읽어야 할 Tool 설명만 늘어납니다.
+5. `.call().content()`: Tool 호출이 몇 번 오가든 모두 끝난 뒤 최종 답변 문자열만 돌려줍니다.
+6. `ToolResultCapture.getAndClear()`: `call()` 동안 실행된 Tool의 이름·인자·결과·실행 구간을 꺼내고, `bind`로 맺은 연결도 풉니다. 꺼낸 기록은 Tool 호출 횟수와 화면용 결과를 만드는 데 씁니다. 이어서 `call()` 전체 구간을 LLM 단계로 **마지막에** 기록합니다.
+7. LLM 호출이 실패하면(두 번째 `catch`) LLM 단계를 "실패: ..."로 남깁니다. 그 전에 실행된 TOOL 단계는 이미 기록되어 있으므로 그대로 남습니다.
+8. Tool을 한 번도 부르지 않았으면 실패로 처리합니다. 이유는 8.4에서 봅니다.
 
 코드에는 "어떤 Tool을 부를지" 정하는 분기가 하나도 없습니다. 그 판단은 모두 `call()` 안, LLM에게 넘어갔습니다.
 
@@ -96,10 +99,10 @@ sequenceDiagram
     participant T as FlightSearchTool(Tool)
     S->>AI: prompt().system().user().tools().call()
     rect rgb(241,235,253)
-        AI->>L: 요청 1 - 질문과 Tool 정의 7개
+        AI->>L: 요청 1 - 질문과 Tool 정의 3개
         L-->>AI: tool_call searchFlightsAfterTime(김포, 제주, 2026-10-18, 14시)
         AI->>T: @Tool 메서드 실행 (같은 스레드)
-        T-->>AI: 항공사별 항공편 (그 즉시 TOOL 단계 기록)
+        T-->>AI: 항공편 요약문 (그 즉시 TOOL 단계 기록)
         AI->>L: 요청 2 - Tool 결과를 대화에 덧붙임
         L-->>AI: 최종 답변 (tool_call 없음)
     end
@@ -120,32 +123,34 @@ Tool을 한 번 부르면 모델과는 최소 두 번 오갑니다(Tool 요청 1
 `src/main/java/net/java21/flyschedule/service/toolcalling/ToolCallingSearchService.java`
 
 ```java
-private String systemPrompt() {
-    return """
-            당신은 국내선 항공편 검색 도우미입니다. 반드시 한국어로 답변하세요.
-            항공편 정보는 반드시 Tool을 호출해서 얻고, Tool 결과에 없는 내용은 지어내지 마세요.
-            오늘: %s (%s)
-            규칙:
-            - 날짜는 "2026-06-25" 형식으로 Tool에 전달합니다.
-            - 시간은 24시간 형식("14:00")으로 전달합니다.
-            - 공항은 한글 이름 그대로 전달합니다. (예: "광주", "제주")
-            - 답변은 항공편 수와 가장 저렴한 항공편을 중심으로 3~4문장으로 요약합니다.
-            """.formatted(LocalDate.now(), LocalDate.now().getDayOfWeek()
-                    .getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.KOREAN));
-}
+    private String systemPrompt() {
+        return """
+                당신은 국내선 항공편 검색 도우미입니다. 반드시 한국어로 답변하세요.
+                항공편 정보는 반드시 Tool을 호출해서 얻고, Tool 결과에 없는 내용은 지어내지 마세요.
+                규칙:
+                - 날짜는 "2026-06-25" 형식으로 Tool에 전달합니다.
+                - 시간은 24시간 형식("14:00")으로 전달합니다.
+                - 공항은 한글 이름 그대로 전달합니다. (예: "광주", "제주")
+                - "내일", "이번 주 금요일" 같은 날짜는 계산하지 말고 아래 날짜표에서 찾습니다.
+                - 답변은 항공편 수와 가장 저렴한 항공편을 중심으로 2~3문장으로 짧게 요약합니다. 항공편 목록을 나열하지 마세요.
+
+                %s
+                """.formatted(DateContext.describe());
+    }
 ```
 
 | 설계 | 이유 |
 |---|---|
 | **근거 제한(grounding)**: "반드시 Tool을 호출해서 얻고, Tool 결과에 없는 내용은 지어내지 마세요" | LLM은 그럴듯한 항공편 번호와 가격을 지어낼 수 있습니다(환각). 답의 근거를 Tool 결과로 묶어 둡니다 |
-| **오늘 날짜와 요일** `"오늘: %s (%s)"` | LLM은 오늘이 며칠인지 모릅니다. 알려 주지 않으면 "모레"를 학습 데이터 시점 기준으로 계산합니다. 요일(`getDisplayName(TextStyle.FULL, Locale.KOREAN)` → "금요일")까지 주어야 "이번 주 토요일"을 셈할 수 있습니다 |
+| **날짜를 붙인 사용자 문장** `.user(DateContext.annotate(message))` | 날짜표를 준 뒤에도 운영에서 `qwen2.5:3b`가 "이번 주 토요일 김포에서 제주"를 2026-10-18로(정답 10-17) 검색했습니다. 그래서 LLM이 고를 일도 남기지 않고 `이번 주 토요일(2026-10-17)`처럼 코드가 날짜를 붙여 보냅니다([2장](02-chatclient.md)) |
+| **날짜표** `%s` ← `DateContext.describe()` | LLM은 오늘이 며칠인지 모릅니다. 오늘·내일·모레와 이번 주·다음 주의 요일별 날짜를 표로 주고, "계산하지 말고 날짜표에서 찾으라"고 합니다. 오늘 날짜 한 줄만 주었을 때 작은 모델이 "이번 주 금요일"을 하루 늦게 계산한 사례가 있었습니다([2장](02-chatclient.md)) |
 | **짧은 규칙 목록** | 긴 문단보다 한 줄짜리 규칙이 작은 모델에게도 잘 지켜집니다. 규칙이 Tool 인자 형식을 하나로 맞춰 Tool 안의 `DateParserAgent`·`AirportCodeAgent`가 처리할 수 있게 합니다 |
-| **답변 길이 제한** | 출력 토큰이 줄어 빨라지고, 작은 모델이 길게 쓰다 엉뚱한 내용을 덧붙이는 일이 줄어듭니다 |
+| **답변 길이 제한** "2~3문장으로 짧게", "항공편 목록을 나열하지 마세요" | 출력 토큰이 줄어 빨라지고, 작은 모델이 길게 쓰다 엉뚱한 내용을 덧붙이는 일이 줄어듭니다. 항공편 목록은 화면의 표가 보여 주므로 답변에서 되풀이할 필요가 없습니다. 처음에는 3~4문장이었는데, 8.9의 측정 뒤 줄였습니다 |
 
 8.2의 코드에서 Tool 호출이 0회면 실패로 처리한 것도 근거 제한의 연장입니다. Tool 없이 나온 답은 되묻기("어느 공항에서 출발하시나요?")이거나 지어낸 항공편일 수 있으므로, 성공으로 보여 주지 않고 LLM의 말을 안내 문장으로만 보여 줍니다.
 
 > **생각해 보기**
-> 요일을 넣었다고 작은 모델이 "다음 주 금요일"을 늘 맞게 계산할까요? 날짜 계산처럼 답이 하나인 일은 LLM보다 코드(`DateParserAgent`, 6장)가 잘합니다. 프롬프트로 도울 수 있는 것과 코드로 옮겨야 할 것을 나눠 보세요.
+> 날짜는 두 단계로 LLM의 손을 떠났습니다. 날짜표는 **계산**을 없애고 **찾기**만 남겼고, `annotate()`는 찾기마저 없앴습니다. 날짜 계산처럼 답이 하나인 일은 LLM보다 코드(`DateParserAgent`, 6장)가 잘합니다. 이 system 프롬프트에서 아직 LLM에게 맡긴 일 가운데 코드로 옮길 수 있는 것이 있을까요? "오후 2시" → "14:00" 같은 변환은 어떨까요?
 
 ## 8.5 Tool은 요청마다 넘긴다
 
@@ -158,7 +163,7 @@ private String systemPrompt() {
 | `ResultSynthesizer`(9장) | 결과 요약 → 추천 문장 | 아니요 |
 | `ToolCallingSearchService`(이 장) | Tool을 골라 검색하고 답변 | 예 |
 
-기본값으로 등록하면 모든 호출에 Tool 7개의 이름·설명·JSON 스키마가 따라갑니다. 입력 토큰과 지연이 늘고, 조건만 뽑으면 되는 호출에서 LLM이 검색 Tool을 불러 API를 헛되이 호출하며, 작은 모델은 Structured Output(JSON) 대신 Tool 호출로 답해 파싱에 실패하기도 합니다. 그래서 Tool은 필요한 요청에서만 `.tools(...)`로 넘깁니다.
+기본값으로 등록하면 모든 호출에 Tool의 이름·설명·JSON 스키마가 따라갑니다. 입력 토큰과 지연이 늘고, 조건만 뽑으면 되는 호출에서 LLM이 검색 Tool을 불러 API를 헛되이 호출하며, 작은 모델은 Structured Output(JSON) 대신 Tool 호출로 답해 파싱에 실패하기도 합니다. 그래서 Tool은 필요한 요청에서만 `.tools(...)`로 넘깁니다.
 
 ## 8.6 실행 기록에 TOOL 단계 남기기
 
@@ -229,10 +234,12 @@ Tool Calling Agent의 유연함은 곧 불확실함입니다. 특히 `qwen2.5:3b
 | LLM이 Tool을 부르지 않음 | LLM 단계 하나, "Tool 0회 호출 후 답변" | `success: false`, LLM의 말을 그대로 보여 줌 | 프롬프트의 "반드시 Tool을 호출" 규칙 강조, 더 큰 모델 |
 | 엉뚱한 Tool을 고름("오후 2시 이후"인데 `searchFlightsByAirline`) | TOOL 단계의 이름이 의도와 다름 | 결과는 그대로 보여 줌 | Tool 설명에 "언제 쓰는지"를 명확히, 넘기는 Tool 수 줄이기 |
 | 엉뚱한 인자(날짜를 `"이번 주 금요일"` 그대로, 공항 자리에 `NAARKJJ`) | "Tool 실행 실패", `detail`에 형식 오류 메시지 | 예외 메시지가 Tool 결과로 LLM에게 돌아가고, LLM이 고쳐서 다시 부르기도 함 | Tool 안의 검증 메시지를 "어떻게 고치라"는 문장으로 |
-| 없는 공항("서울에서 제주") | `getAirportCode` 실패 → 다른 공항으로 재시도 | 실패한 호출도 TOOL 단계로 남음 | 시스템 프롬프트에 지원 공항 목록 |
+| 없는 공항("서울에서 제주") | 검색 Tool이 "알 수 없는 공항입니다: 서울"로 실패 → 다른 공항으로 재시도 | 실패한 호출도 TOOL 단계로 남음 | 시스템 프롬프트에 지원 공항 목록 |
+| 날짜를 잘못 셈("이번 주 토요일"을 하루 늦게) | TOOL 단계 `detail`의 날짜가 기대와 다름 | 날짜표를 넣었지만 그래도 틀려, 사용자 문장에 코드가 계산한 날짜를 붙여 보냄(`DateContext.annotate`) | 코드가 계산할 수 있는 표현을 늘리기 |
+| Gemini에서 Tool 실행 직후 `Failed to parse JSON` | TOOL 단계는 성공, LLM 단계가 "실패: ..." | Tool 결과를 `{"result": ...}` JSON으로 감쌈(`CompactFlightResultConverter`, 5장) | 제공자를 바꿀 때 Tool 결과 형식 점검 |
 | 외부 API 오류(`ExternalApiException`) | Tool 실행 실패, 공공데이터 포털 오류 메시지 | Tool 결과로 LLM에게 전달, 밖으로 나오면 `describeError`가 메시지를 그대로 보여 줌 | 서비스 키(`DATA_GO_KR_SERVICE_KEY`) 확인 |
 | LLM 연결 실패 | 그때까지 실행된 TOOL 단계 뒤에 "실패: ..."로 끝난 LLM 단계 | "LLM 서버에 연결할 수 없습니다..." 안내. 재시도는 `spring.ai.retry.max-attempts: 2`로 줄여 둠 | 다른 모델 선택 |
-| 응답이 너무 늦음 | 전체 시간이 수십 초 | 화면은 작업 API로 프록시 타임아웃을 피함 | Tool 결과 크기 제한(항공사별 최대 3편, 5장) |
+| 응답이 너무 늦음 | 전체 시간이 수십 초 | 화면은 작업 API로 프록시 타임아웃을 피함 | 넘기는 Tool 수, Tool 결과, 답변 길이 줄이기(8.9) |
 
 "서울에서 제주" 같은 실패-재시도 흐름은 테스트로도 확인할 수 있습니다.
 
@@ -250,24 +257,107 @@ Tool Calling Agent의 유연함은 곧 불확실함입니다. 특히 `qwen2.5:3b
 |---|---|---|
 | 코드에서 보이는 LLM 호출 | 0회 | 최소 1회(`call()`) |
 | 실제 모델 왕복 | 0회 | Tool을 부르면 2회 이상 |
-| 실측 지연 | 약 0.6초(대부분 공공데이터 API 대기) | 모델에 따라 수 초 ~ 수십 초(아래 실측 예는 약 99초) |
+| 실측 지연 | 약 0.6초(대부분 공공데이터 API 대기) | 모델에 따라 수 초 ~ 수십 초(개선 전 Ollama 실측 약 99초, 8.9) |
 | 같은 입력에 같은 결과 | 예 | 보장되지 않음 |
 
-`temperature: 0.0`으로 두어도 Tool 선택이 늘 같다고 보장되지는 않습니다. 모델 버전이 바뀌거나 Tool 설명 한 줄만 바뀌어도 고르는 Tool이 달라질 수 있습니다. 원격 Ollama의 3B 모델은 호출 한 번에 수십 초가 걸리기도 하는데, 왕복이 두세 번 쌓이면 1분을 넘기기 쉽습니다. 실제로 이 앱은 동기 요청이 nginx의 기본 60초 제한에 걸려 504 오류를 낸 적이 있고, 그래서 화면이 작업 API를 쓰게 되었습니다.
+Ollama처럼 `temperature: 0.0`으로 두어도 Tool 선택이 늘 같다고 보장되지는 않습니다. 모델 버전이 바뀌거나 Tool 설명 한 줄만 바뀌어도 고르는 Tool이 달라질 수 있습니다. 원격 Ollama의 3B 모델은 호출 한 번에 수십 초가 걸리기도 하는데, 왕복이 두세 번 쌓이면 1분을 넘기기 쉽습니다. 실제로 이 앱은 동기 요청이 nginx의 기본 60초 제한에 걸려 504 오류를 낸 적이 있고, 그래서 화면이 작업 API를 쓰게 되었습니다.
 
-데모 사이트(https://fly.java21.net)에서 Ollama `qwen2.5:3b` 모델로 "광주에서 제주" 검색을 실행했을 때 남은 실제 실행 기록입니다.
+데모 사이트(https://fly.java21.net)에서 Ollama `qwen2.5:3b` 모델로 "광주에서 제주" 검색을 실행했을 때 남은 실제 실행 기록입니다. 8.9의 개선을 적용하기 **전**의 기록입니다.
 
 | 순서 | kind | actor | detail | 시작 | 걸린 시간 |
 |---|---|---|---|---|---|
 | 1 | TOOL | searchFlightsByAirline | 광주 → 제주, 2026-10-17 → 5개 항공사, 14편 | 약 36.4초 | 약 84ms |
 | 2 | LLM | ollama | Tool 1회 호출 후 답변 | 0초 | 99,362ms |
 
-표 읽기: 전체 약 99.4초 가운데 Tool(공공데이터 포털 호출 포함)은 0.1초도 걸리지 않았습니다. LLM이 Tool을 고르는 데 약 36초, Tool 결과를 받아 답을 쓰는 데 약 63초가 걸렸습니다. 지연의 거의 전부가 모델 왕복입니다. 이 요청을 동기 엔드포인트로 보냈다면 nginx의 60초 제한을 넘겨 504로 끝났을 것입니다.
+표 읽기: 전체 약 99.4초 가운데 Tool(공공데이터 포털 호출 포함)은 0.1초도 걸리지 않았습니다. LLM이 Tool을 고르는 데 약 36초, Tool 결과를 받아 답을 쓰는 데 약 63초가 걸렸습니다. 지연의 거의 전부가 모델 왕복입니다. 이 요청을 동기 엔드포인트로 보냈다면 nginx의 60초 제한을 넘겨 504로 끝났을 것입니다. 이 숫자를 어떻게 줄였는지 다음 절에서 봅니다.
 
 > **생각해 보기**
 > 같은 문장을 다섯 번 보냈을 때 TOOL 단계 수가 매번 다르다면, 이 결과를 운영 서비스에서 그대로 써도 될까요? "어떤 요청이라면 괜찮은가"를 기준으로 답해 보세요.
 
-## 8.9 가짜 LLM으로 테스트하기
+## 8.9 측정하고 개선하기
+
+99초는 작업 API 덕분에 화면이 끊기지는 않지만, 사용자가 기다리기에는 너무 깁니다. 무엇을 줄여야 할지 정하려면 먼저 시간이 **어디에** 쓰이는지 알아야 합니다. 이 앱은 실행 기록에 각 단계의 시작 시각과 길이를 남기므로, 감으로 고치지 않고 숫자를 보고 고칠 수 있습니다.
+
+### CPU에서 시간이 쓰이는 곳
+
+데모 사이트의 Ollama 서버는 GPU 없이 CPU로 3B 모델을 돌립니다. CPU에서 LLM 호출 한 번의 시간은 크게 두 부분입니다.
+
+- **입력 토큰 읽기**: system 프롬프트, 사용자 문장, Tool 정의, (두 번째 왕복이면) Tool 결과까지 모두 읽어야 첫 토큰을 만들 수 있습니다. 입력이 길수록 오래 걸립니다.
+- **출력 토큰 만들기**: 답을 한 토큰씩 만듭니다([1장](01-llm-and-spring-ai.md)). 답이 길수록 오래 걸립니다.
+
+Tool Calling의 `call()` 한 번에는 왕복이 두 번 있습니다(8.3). 개선 전 기록에 대입하면 다음과 같습니다.
+
+| 구간 | 입력(읽기) | 출력(쓰기) | 개선 전 |
+|---|---|---|---|
+| 왕복 1: Tool 선택 | system 프롬프트 + 질문 + **Tool 정의 7개** | Tool 호출 요청(짧은 JSON) | 약 36.4초 |
+| Tool 실행 | - | - | 약 0.08초 |
+| 왕복 2: 답변 작성 | 왕복 1의 입력 전체 + **Tool 결과 JSON(필드 9개짜리 항공편 14편)** | **3~4문장 답변** | 약 63초 |
+
+굵게 쓴 부분이 줄일 수 있는 부분입니다. Tool 실행은 0.1초도 안 되므로 여기를 최적화해도 소용이 없습니다.
+
+### 손잡이 여섯 개
+
+지연을 줄이는 손잡이는 여섯 가지입니다. 앞의 다섯은 이 앱에 실제로 적용했습니다.
+
+| 손잡이 | 이 앱에서 한 일 | 줄어드는 것 | 다룬 곳 |
+|---|---|---|---|
+| 넘기는 Tool 수 | 7개 → 3개(`.tools(flightSearchTool)`) | 두 왕복의 입력 | [5장](05-domain-tools.md), 8.2 |
+| Tool 결과 크기 | `CompactFlightResultConverter`로 한 줄 요약 | 왕복 2의 입력 | [5장](05-domain-tools.md) |
+| 답변 길이 | "2~3문장으로 짧게", "목록을 나열하지 마세요" | 왕복 2의 출력 | 8.4 |
+| 출력 상한 | Ollama `max-tokens: 512` | 최악의 경우 출력 | [1장](01-llm-and-spring-ai.md) |
+| 추론 단계 | Gemini `thinking-level: minimal` | 답하기 전 추론 시간 | [1장](01-llm-and-spring-ai.md) |
+| 모델 선택 | 화면에서 Ollama와 Gemini를 고름 | 전부 | [1장](01-llm-and-spring-ai.md) |
+
+### 개선 뒤의 실측
+
+같은 데모 사이트에서 개선 뒤 작업 API의 실행 기록으로 잰 숫자입니다. Ollama는 여러 번 실행한 범위입니다.
+
+| 패턴 / 모델 | 전체 | 구간별 |
+|---|---|---|
+| Tool Calling / Ollama (개선 전) | 99.4초 | Tool 선택 36.4초, 답변 작성 약 63초 |
+| Tool Calling / Ollama (개선 후) | 23.5~25.7초 | Tool 선택 약 14.6초, 답변 작성 약 9~11초 |
+| Tool Calling / Gemini 3.5 Flash-Lite | 2.7초 | Tool 선택 1.5초, 답변 작성 약 1.2초 |
+| Orchestrator / Gemini 3.5 Flash-Lite | 3.9초 | 계획 2.5초, Worker 4개 병렬 약 0.1초, 종합 1.3초 |
+| Orchestrator / Ollama | 31.5초 | 계획 22.1초, 종합 9.3초 |
+
+```mermaid
+flowchart LR
+    subgraph BEFORE["개선 전 Ollama 99.4초"]
+        B1["왕복 1 Tool 선택<br/>36.4초"]:::llm --> B2["Tool 실행<br/>0.1초 미만"]:::tool --> B3["왕복 2 답변 작성<br/>약 63초"]:::llm
+    end
+    subgraph AFTER["개선 후 Ollama 약 24초"]
+        A1["왕복 1 Tool 선택<br/>약 14.6초"]:::llm --> A2["Tool 실행<br/>0.1초 안팎"]:::tool --> A3["왕복 2 답변 작성<br/>약 9~11초"]:::llm
+    end
+    classDef code fill:#eef0f3,stroke:#5b6472,color:#1d2129
+    classDef llm fill:#f1ebfd,stroke:#7c4ddb,color:#1d2129
+    classDef tool fill:#fdf0e3,stroke:#d9822b,color:#1d2129
+    classDef worker fill:#e6f6f0,stroke:#1f9d74,color:#1d2129
+```
+
+그림 읽기: 보라색(LLM) 두 칸이 모두 줄었습니다. 왕복 1은 Tool 정의가 줄어 약 36초에서 15초 가까이로, 왕복 2는 Tool 결과와 답변이 함께 줄어 약 63초에서 10초 안팎으로 줄었습니다. 주황색 Tool 칸은 처음부터 작았습니다.
+
+숫자에서 읽을 수 있는 것은 세 가지입니다.
+
+- **CPU 모델에서는 입력도 비용입니다.** 왕복 1의 출력(Tool 호출 요청)은 개선 전후가 거의 같은데도 시간이 절반 아래로 줄었습니다. 줄어든 것은 읽어야 할 Tool 정의입니다.
+- **모델 선택이 가장 큰 손잡이입니다.** 같은 코드, 같은 Tool에서 Gemini는 2.7초, Ollama는 약 24초입니다. 그래도 나머지 손잡이는 어느 모델에서나 입력과 출력을 줄이므로 비용과 지연에 도움이 됩니다.
+- **Orchestrator의 Worker는 거의 공짜입니다.** 검색 4개를 병렬로 돌리는 데 약 0.1초입니다. 시간은 LLM이 일하는 계획과 종합에 쓰입니다. Ollama에서 계획이 22.1초로 가장 깁니다. Structured Output의 JSON 스키마를 읽고 작업 여러 개짜리 JSON을 써야 하기 때문입니다([9장](09-orchestrator-workers.md)).
+
+개선 후에도 Ollama는 20~30초가 걸립니다. 동기 요청이었다면 여전히 불안한 숫자입니다. **작업 API**([10장](10-choosing-testing-operating.md))가 있어서 이런 긴 호출도 화면에서 쓸 수 있고, 진행 중에도 TOOL 단계가 먼저 보여 사용자가 무작정 기다리지 않습니다.
+
+> **직접 확인하기**
+> 앱을 실행하고 작업 API로 같은 문장을 두 모델로 보냅니다.
+> ```bash
+> curl -s -X POST http://localhost:8080/api/search/tool-calling/jobs \
+>   -H "Content-Type: application/json" \
+>   -d '{"message": "내일 광주에서 제주", "model": "ollama"}'
+> curl -s http://localhost:8080/api/search/jobs/{jobId}
+> ```
+> 기대 결과: `"status":"DONE"`이 되면 `trace`에서 TOOL 단계의 `startMs`(Tool 선택까지 걸린 시간)와 LLM 단계의 `durationMs`(전체)를 읽어 위 표처럼 정리합니다. `"model": "gemini"`(키 필요)로도 반복합니다. 숫자는 서버 사양과 부하에 따라 다르지만, 두 모델의 차이와 구간별 비율은 비슷하게 나옵니다.
+
+> **생각해 보기**
+> 왕복 1(Tool 선택)을 더 줄이려면 무엇을 바꿀 수 있을까요? Tool 설명 문장, system 프롬프트의 날짜표, `@ToolParam` 설명은 모두 입력 토큰입니다. 무엇을 줄이면 속도는 빨라지지만 Tool 선택의 정확도가 떨어질 수 있는지도 함께 생각해 보세요.
+
+## 8.10 가짜 LLM으로 테스트하기
 
 실제 LLM으로 테스트하면 느리고, 결과가 매번 다르고, 키가 필요합니다. 그래서 `ToolCallingSearchServiceTest`는 LLM을 흉내 냅니다. 핵심은 **`call().content()`가 불릴 때, LLM이 요청한 것처럼 Tool 메서드를 직접 실행하는 것**입니다.
 
@@ -320,21 +410,22 @@ LLM의 판단(어떤 Tool을 부를지)은 테스트가 정해 두고, **그 판
 
 - Tool Calling Agent는 어떤 Tool을, 어떤 인자로, 몇 번 부를지를 LLM이 정합니다. 코드에는 분기 대신 `.tools(...)`와 system 프롬프트가 남습니다.
 - `call()` 한 번 안에서 모델과 2회 이상 오가며, Tool은 같은 스레드에서 실행됩니다. 실행 기록에는 Tool이 실행되는 즉시 TOOL 단계가 남고, 그 구간 전체를 감싸는 LLM 단계 하나가 마지막에 남습니다.
-- system 프롬프트에는 오늘 날짜와 요일, 짧은 규칙 목록, "Tool 결과에 없는 내용은 지어내지 마라"는 근거 제한을 넣습니다. Tool 0회 응답은 실패로 봅니다.
-- Tool은 `defaultTools`가 아니라 필요한 요청에서만 넘깁니다.
+- 사용자 문장에는 코드가 계산한 날짜를 붙여 보내고(`DateContext.annotate`), system 프롬프트에는 날짜표, 짧은 규칙 목록, "Tool 결과에 없는 내용은 지어내지 마라"는 근거 제한, 짧은 답변 규칙을 넣습니다. Tool 0회 응답은 실패로 봅니다.
+- Tool은 `defaultTools`가 아니라 필요한 요청에서, 필요한 것(검색 Tool 3개)만 넘깁니다.
+- 지연은 실행 기록으로 재고 고칩니다. CPU 모델에서는 입력 토큰과 출력 토큰이 모두 시간입니다. Tool 수·Tool 결과·답변 길이를 줄여 Ollama Tool Calling을 99.4초에서 약 24초로 줄였습니다.
 - 유연한 대신 결정성이 낮고, 느리고, 비쌉니다. 실패는 TOOL 단계에서 찾고, LLM이 보는 정보를 분명하게 해서 줄입니다.
 
 ## 연습 문제
 
-**1. [기본] system 프롬프트의 요일 검사하기**
-system 프롬프트에는 "오늘: 2026-10-16 (금요일)"처럼 요일이 들어갑니다. 그런데 지금 테스트는 날짜만 검사합니다. 요일도 검사해 보세요.
-- **힌트**: `ToolCallingSearchService.systemPrompt()`, `ToolCallingSearchServiceTest.passesToolsPerRequest`의 `verify(requestSpec).system(contains(...))`. 요일 문자열은 `LocalDate.now().getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.KOREAN)`으로 만듭니다.
-- **완료 기준**: 요일 문자열이 프롬프트에 들어갔는지 검사하는 테스트를 추가하고 `./mvnw test`가 통과합니다.
+**1. [기본] system 프롬프트의 날짜표 검사하기**
+system 프롬프트에는 `DateContext.describe()`가 만든 날짜표가 들어갑니다. 그런데 지금 테스트는 오늘 날짜만 검사합니다. 이번 주·다음 주 줄도 검사해 보세요.
+- **힌트**: `ToolCallingSearchService.systemPrompt()`, `ToolCallingSearchServiceTest.passesToolsPerRequest`의 `verify(requestSpec).system(contains(...))`. 기대 문자열은 `DateContext.describe()`를 그대로 쓰거나, 그 안의 `"이번 주: "` 줄을 씁니다.
+- **완료 기준**: 날짜표가 프롬프트에 들어갔는지 검사하는 테스트를 추가하고 `./mvnw test`가 통과합니다.
 
-**2. [기본] 넘기는 Tool 줄이기**
-항공사 Tool(`AirlineInfoTool`)은 이 검색에 거의 쓰이지 않습니다. `.tools(...)`에서 빼고 결과를 비교해 보세요.
-- **힌트**: `ToolCallingSearchService` 생성자와 `.tools(...)`, 테스트의 `verify(requestSpec).tools(any(), any(), any())`.
-- **완료 기준**: 테스트를 새 인자 수에 맞게 고치고 통과합니다. 화면에서 같은 문장을 Ollama로 세 번 실행해 TOOL 단계 수와 전체 시간을 표로 적습니다.
+**2. [기본] Tool을 다시 늘려 보기**
+8.9에서 Tool을 7개에서 3개로 줄였습니다. 거꾸로 `.tools(flightSearchTool, airportInfoTool, airlineInfoTool)`로 7개를 다시 넘기고 시간을 비교해 보세요. 실험 뒤 원래대로 되돌립니다.
+- **힌트**: `ToolCallingSearchService` 생성자에 `AirportInfoTool`, `AirlineInfoTool`을 추가하고, 테스트의 `verify(requestSpec).tools(flightSearchTool)`와 생성자 호출도 맞춥니다.
+- **완료 기준**: 화면이나 작업 API로 같은 문장을 Ollama로 세 번씩 실행해, Tool 3개와 7개일 때의 TOOL 단계 `startMs`와 전체 시간을 표로 적습니다. 되돌린 뒤 `./mvnw test -Dtest=ToolCallingSearchServiceTest`가 통과합니다.
 
 **3. [도전] Tool을 부르지 않은 이유 구분하기**
 지금은 Tool 0회면 LLM의 답을 그대로 실패 메시지로 씁니다. 답이 질문(되묻기)인지, 항공편을 지어낸 것인지 구분해 다른 안내를 보여 주세요.

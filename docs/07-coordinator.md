@@ -90,6 +90,8 @@ public record SearchCriteria(
 
 ```java
     public Extraction extract(String message, Supplier<ChatClient> chatClient) {
+        // "이번 주 토요일" 같은 표현에 코드가 계산한 날짜를 먼저 붙인다 → 정규식도 LLM도 계산할 필요가 없다
+        message = DateContext.annotate(message);
         Optional<SearchCriteria> parsed = parseWithRegex(message);
         if (parsed.isPresent()) {
             log.info("정규식으로 검색 조건 추출: {}", parsed.get());
@@ -100,13 +102,16 @@ public record SearchCriteria(
         SearchCriteria criteria = chatClient.get().prompt()
                 .system("""
                         항공편 검색 문장에서 검색 조건을 추출합니다.
-                        오늘 날짜는 %s입니다. "내일", "다음 주 금요일" 같은 표현은 이 날짜를 기준으로 YYYY-MM-DD로 바꿉니다.
+                        "내일", "다음 주 금요일" 같은 표현은 계산하지 말고 아래 날짜표에서 찾아 YYYY-MM-DD로 적습니다.
                         공항은 공항 코드가 아니라 한글 이름(광주, 김포, 제주 등)으로 적습니다.
                         문장에 없는 조건은 null로 둡니다.
-                        """.formatted(LocalDate.now()))
+
+                        %s
+                        """.formatted(DateContext.describe()))
                 .user(message)
                 .call()
-                .entity(SearchCriteria.class);
+                // 작은 모델이 JSON 앞뒤에 문장을 붙여도 JSON 부분만 읽는다
+                .entity(new BeanOutputConverter<>(SearchCriteria.class, null, new LenientJsonCleaner()));
 
         if (criteria == null || !criteria.hasRoute()) {
             throw new IllegalArgumentException("출발 공항과 도착 공항을 찾지 못했습니다. 예: \"내일 광주에서 제주\"");
@@ -117,6 +122,7 @@ public record SearchCriteria(
 
 **코드 읽기**
 
+- 첫 줄의 `DateContext.annotate(message)`는 "이번 주 토요일", "내일" 같은 표현 옆에 코드가 계산한 날짜를 붙입니다(`이번 주 토요일(2026-10-17)`, [2장](02-chatclient.md)). 이후의 정규식과 LLM은 모두 날짜가 붙은 문장을 받습니다.
 - 반환값 `Extraction(criteria, usedLlm)`은 조건과 함께 "LLM을 썼는가"를 돌려줍니다. Coordinator는 이 값으로 실행 기록의 색(CODE 또는 LLM)을 정합니다.
 - `ChatClient`가 아니라 `Supplier<ChatClient>`를 받습니다. `chatClient.get()`은 정규식이 실패한 뒤에야 불립니다. 그래서 정규식으로 끝나는 문장은 화면에서 Gemini를 골랐고 `GOOGLE_GENAI_API_KEY`가 없어도 검색됩니다. 모델 설정을 확인하는 일 자체가 일어나지 않기 때문입니다.
 - LLM 결과에 출발·도착이 없으면 예외를 던집니다. LLM의 출력을 그대로 믿지 않는 첫 번째 관문입니다.
@@ -161,9 +167,12 @@ public record SearchCriteria(
 | "광주로 가는 제주에서 출발 항공편" | 성공(제주 → 광주) | "~에서"가 붙은 쪽이 출발 |
 | "제주 가는 항공편" | 포기 → LLM | 공항이 1개 |
 | "김포나 광주에서 제주" | 포기 → LLM | 공항이 3개, 해석이 필요 |
-| "다음 주 금요일 광주에서 제주" | 포기 → LLM | `COMPLEX_DATE_PATTERN`(요일, 주말, 다음 주, N일 뒤, 연도 없는 "3월 25일" 등) |
+| "다음 주 금요일 광주에서 제주" | 성공 | `annotate()`가 붙인 `(2026-10-23)`을 `DATE_PATTERN`이 읽음 |
+| "주말에 광주에서 제주", "3일 뒤 광주에서 제주" | 포기 → LLM | `COMPLEX_DATE_PATTERN`(주말, N일 뒤, 연도 없는 "3월 25일" 등 코드가 날짜를 붙이지 못한 표현) |
 
-`COMPLEX_DATE_PATTERN`이 왜 필요한지 생각해 봅시다. 이 검사가 없으면 "다음 주 금요일 광주에서 제주"는 날짜를 못 찾은 채 오늘 날짜로 검색됩니다. 오류 없이 **엉뚱한 결과**가 나오는 것이 가장 나쁜 실패입니다. 확실하지 않으면 포기하고 LLM에게 넘기는 편이 낫습니다.
+`COMPLEX_DATE_PATTERN`에는 "요일", "이번 주"도 들어 있지만, 요일 표현은 `annotate()`가 이미 절대 날짜를 붙여 두었으므로 `hasAbsoluteDate`가 먼저 참이 되어 이 검사까지 오지 않습니다. 결국 이 검사에 걸리는 것은 코드가 계산하지 못한 표현뿐입니다. 처음에는 요일 표현도 모두 LLM에게 넘겼는데, 작은 모델이 "이번 주 토요일"을 하루 늦게 고르는 일이 운영에서 생기자 날짜 계산을 코드로 옮겼습니다. **코드가 확실히 할 수 있는 일은 LLM에게 맡기지 않는다**는 원칙의 실례입니다.
+
+`COMPLEX_DATE_PATTERN`이 왜 필요한지 생각해 봅시다. 이 검사가 없으면 "주말에 광주에서 제주"는 날짜를 못 찾은 채 오늘 날짜로 검색됩니다. 오류 없이 **엉뚱한 결과**가 나오는 것이 가장 나쁜 실패입니다. 확실하지 않으면 포기하고 LLM에게 넘기는 편이 낫습니다.
 
 시간("오후 2시 30분 이후")과 가격("3만원에서 5만원 사이")도 같은 메서드가 정규식으로 뽑습니다. 규칙은 `SearchCriteriaExtractorTest`의 `@CsvSource` 표에 모두 적혀 있으니 테스트를 문서처럼 읽어 보세요.
 
@@ -171,7 +180,7 @@ public record SearchCriteria(
 
 LLM을 부르는 경우는 드물지만, 부를 때는 결과가 아래 단계에서 바로 쓰입니다. 위 system 프롬프트의 네 줄은 각각 이유가 있습니다.
 
-- **오늘 날짜를 넣는다.** LLM은 시계가 없습니다. 학습 데이터가 끝난 시점의 감각만 있어서, 날짜를 알려 주지 않으면 "내일"을 계산할 수 없습니다. `LocalDate.now()`를 프롬프트에 넣어 기준을 줍니다.
+- **날짜표를 넣는다.** LLM은 시계가 없습니다. 학습 데이터가 끝난 시점의 감각만 있어서, 날짜를 알려 주지 않으면 "내일"을 계산할 수 없습니다. `DateContext.describe()`로 오늘과 이번 주·다음 주 날짜표를 넣고 "계산하지 말고 찾으라"고 합니다([2장](02-chatclient.md)).
 - **규칙을 짧은 목록으로 준다.** 원격 Ollama의 3B 모델 같은 작은 모델은 긴 설명보다 짧은 지시를 더 잘 따릅니다. 한 줄에 규칙 하나를 두면 나중에 어떤 규칙이 지켜지지 않았는지 찾기도 쉽습니다.
 - **공항은 코드가 아니라 한글 이름으로 받는다.** LLM은 `NAARKJJ` 같은 코드를 정확히 외우지 못하고, 그럴듯한 가짜 코드를 지어낼 수 있습니다. 코드 변환은 6장의 `AirportCodeAgent`가 공식 표로 합니다. LLM은 잘하는 일(문장 해석)만, 코드는 확실한 일(표 조회)만 맡깁니다.
 - **문장에 없는 조건은 null로 둔다.** 근거 제한(grounding)입니다. 이 줄이 없으면 LLM이 "보통 이 정도겠지" 하며 가격 상한이나 시각을 지어 넣을 수 있습니다. 입력에 없는 정보는 만들지 말라고 분명히 적습니다.
@@ -364,7 +373,7 @@ public record TraceStep(
 
 > **직접 확인하기**
 > 애플리케이션을 실행하고(`./mvnw spring-boot:run`) 브라우저에서 `http://localhost:8080/`을 엽니다. Coordinator 패턴만 선택하고 "내일 광주에서 제주 오전 10시 이후 8만원 이하"를 검색합니다.
-> 기대 결과: 실행 기록 여덟 줄이 모두 회색이고, 5번 줄(`ApiClientService`)의 막대만 길게 보입니다. 숫자 칸의 "LLM 호출"이 "0회"입니다. 이어서 "다음 주 금요일 광주에서 제주"를 검색하면 1번 줄만 보라색으로 바뀌고 그 막대가 가장 깁니다.
+> 기대 결과: 실행 기록 여덟 줄이 모두 회색이고, 5번 줄(`ApiClientService`)의 막대만 길게 보입니다. 숫자 칸의 "LLM 호출"이 "0회"입니다. 이어서 "주말에 광주에서 제주"를 검색하면 1번 줄만 보라색으로 바뀌고 그 막대가 가장 깁니다. "다음 주 금요일 광주에서 제주"는 날짜가 코드로 붙으므로 여전히 모두 회색입니다.
 
 ## 응답 — SearchResponse와 TaskResult
 
@@ -478,7 +487,7 @@ Coordinator는 1초 안에 끝나므로 동기 API로 충분합니다. 하지만
     @Test
     @DisplayName("정규식이 실패하면 1단계만 LLM으로 처리하고, 나머지 순서는 그대로다")
     void llmOnlyForExtraction() {
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(SearchCriteria.class))
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchCriteria>>any()))
                 .thenReturn(new SearchCriteria("김포", "제주", "2026-03-27", null, null, null, null));
 
         SearchResponse response = coordinator.coordinate("이번 주 금요일 서울에서 제주도", "gemini");
@@ -520,7 +529,7 @@ Coordinator는 1초 안에 끝나므로 동기 API로 충분합니다. 하지만
 
 이제 이 문장을 Coordinator 패턴에 보내 봅시다.
 
-1. 정규식은 김포, 광주, 제주 세 공항을 찾습니다. 공항이 두 개가 아니므로 포기합니다. "요일"도 들어 있어 어차피 날짜 계산이 필요합니다.
+1. `annotate()`가 "금요일(2026-10-16)이나 토요일(2026-10-17)"처럼 날짜를 붙여 줍니다. 그래도 정규식은 김포, 광주, 제주 세 공항을 찾으므로 포기합니다. 공항이 두 개가 아니기 때문입니다.
 2. LLM이 검색 조건을 채웁니다. 그런데 `SearchCriteria`에는 출발 칸이 하나, 날짜 칸이 하나뿐입니다.
 3. LLM은 하나를 골라 채울 수밖에 없습니다. 이를테면 "김포 → 제주 · 금요일"입니다.
 
@@ -549,7 +558,7 @@ Coordinator는 1초 안에 끝나므로 동기 API로 충분합니다. 하지만
 ## 핵심 정리
 
 - Coordinator 패턴에서는 코드가 다음 단계를 결정합니다. 순서는 `FlightSearchCoordinator`에 적혀 있고 LLM은 그 순서에 끼어들지 못합니다.
-- 검색 조건 추출은 정규식이 먼저이고, 확실하지 않으면 포기하고 LLM에게 넘깁니다. 프롬프트에는 오늘 날짜, 짧은 규칙, 근거 제한을 넣습니다.
+- 검색 조건 추출은 정규식이 먼저이고, 확실하지 않으면 포기하고 LLM에게 넘깁니다. 요일 같은 날짜 표현은 `DateContext.annotate()`가 먼저 날짜를 붙여 정규식 경로로 처리합니다. 프롬프트에는 날짜표, 짧은 규칙, 근거 제한을 넣습니다.
 - LLM 출력은 `hasRoute()`와 뒤따르는 전문 Agent가 검증합니다. 모르는 값은 예외가 되어 사용자에게 안내됩니다.
 - `ExecutionTrace`가 단계마다 종류(CODE·LLM·TOOL·WORKER), 시작 시각, 걸린 시간, 스레드를 남기고, 화면은 이를 색깔 있는 타임라인으로 그립니다.
 - 정규식 경로는 LLM 호출 0회, 약 0.6초, 같은 입력에 같은 결과입니다. 대신 "검색 조건 하나"로 표현할 수 없는 요청은 조용히 일부만 처리합니다.
@@ -567,7 +576,7 @@ Coordinator는 1초 안에 끝나므로 동기 API로 충분합니다. 하지만
 
 LLM이 날짜를 `"2026/10/23"`처럼 잘못된 형식으로 돌려주면 Coordinator는 어떤 응답을 돌려줄까요? 예상을 먼저 적고 테스트로 확인하세요.
 
-- **힌트**: `llmOnlyForExtraction`처럼 `entity(SearchCriteria.class)`를 꾸밉니다. 예외를 던지는 곳은 `DateParserAgent.parseSpecificDate()`이고, `coordinate()`의 `catch (IllegalArgumentException e)`가 받습니다.
+- **힌트**: `llmOnlyForExtraction`처럼 `entity(...)`를 `any()`로 꾸밉니다. 예외를 던지는 곳은 `DateParserAgent.parseSpecificDate()`이고, `coordinate()`의 `catch (IllegalArgumentException e)`가 받습니다.
 - **완료 기준**: `success()`가 `false`, `message()`에 "날짜 형식"이 들어 있고, 실행 기록의 마지막 단계가 `DateParserAgent`이며 `detail`이 "실패"로 시작한다는 단언이 통과합니다. `ApiClientService`는 한 번도 불리지 않아야 합니다(`verify(..., never())`).
 
 **3. [도전] fallback 프롬프트에 허용 공항 목록 넣기**
@@ -577,11 +586,11 @@ LLM이 날짜를 `"2026/10/23"`처럼 잘못된 형식으로 돌려주면 Coordi
 - **힌트**: `SearchCriteriaExtractor`의 `AIRPORT_NAMES`를 `String.join(", ", AIRPORT_NAMES)`로 프롬프트에 넣습니다. 테스트에서는 `ArgumentCaptor<String>`으로 `chatClient.prompt().system(...)`에 넘어간 문자열을 잡아 확인할 수 있습니다(`RETURNS_DEEP_STUBS`에서 `chatClient.prompt()`는 매번 같은 가짜 객체를 돌려줍니다).
 - **완료 기준**: system 프롬프트에 "광주", "김포", "제주"가 모두 들어 있음을 확인하는 테스트가 통과하고, 기존 `SearchCriteriaExtractorTest`와 `FlightSearchCoordinatorTest`도 모두 통과합니다. 화면에서 Ollama로 "이번 주 토요일 서울에서 제주"를 검색해 1단계 `detail`이 "김포 → 제주"로 나오는지 확인합니다(모델에 따라 다를 수 있으니 결과를 기록해 둡니다).
 
-**4. [도전] "글피"를 정규식으로 처리하기**
+**4. [도전] "3일 뒤"도 코드가 계산하기**
 
-`DateParserAgent`는 "글피"를 이해하지만, `SearchCriteriaExtractor`의 `COMPLEX_DATE_PATTERN`은 "글피"가 있으면 정규식을 포기하고 LLM에 넘깁니다. 정규식 경로에서 "글피"를 오늘+3일로 처리하도록 고치세요.
+"3일 뒤 광주에서 제주"는 지금 `COMPLEX_DATE_PATTERN`에 걸려 LLM으로 갑니다. 그런데 "N일 뒤"는 답이 하나로 정해지는 계산입니다. `DateContext.annotate()`가 "3일 뒤(2026-10-19)"처럼 날짜를 붙이게 고쳐, 이 문장도 정규식 경로로 처리되게 하세요.
 
-- **힌트**: `COMPLEX_DATE_PATTERN`에서 `글피`를 빼고, `parseWithRegex()`의 "모레"/"내일" 분기 앞에 "글피" 분기를 추가합니다.
-- **완료 기준**: `SearchCriteriaExtractorTest`에 "글피 광주에서 제주" → `LocalDate.now().plusDays(3)` 테스트를 추가해 통과하고, 기존 `giveUpOnComplexDates` 테스트도 그대로 통과합니다. 화면에서 같은 문장을 검색하면 1번 줄이 회색(CODE)입니다.
+- **힌트**: `DateContext`의 `RELATIVE_DAY`, `WEEKDAY`처럼 `(\d+)\s*일\s*(뒤|후)` 패턴을 하나 더 두고 `replaceAll`로 날짜를 붙입니다. 이미 괄호가 붙은 표현은 건너뛰는 `(?!\s*\()`도 함께 씁니다.
+- **완료 기준**: `DateContextTest`에 `"3일 뒤 출발"` → `"3일 뒤(2026-10-19) 출발"`(오늘 2026-10-16 기준) 테스트를 추가해 통과합니다. `SearchCriteriaExtractorTest.giveUpOnComplexDates`의 `'3일 뒤 광주에서 제주'`는 `parseWithRegex()`만 부르므로 그대로 통과하고, `extract("3일 뒤 광주에서 제주", ...)`는 `usedLlm()`이 `false`인 새 테스트를 추가해 통과합니다. 화면에서 같은 문장을 검색하면 1번 줄이 회색(CODE)입니다.
 
 코드가 모든 순서를 정하는 방식의 장점과 한계를 보았습니다. 8장에서는 정반대로, 어떤 Tool을 몇 번 부를지를 LLM에게 맡기는 Tool Calling Agent를 만듭니다.

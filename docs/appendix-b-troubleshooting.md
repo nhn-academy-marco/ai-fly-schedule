@@ -25,7 +25,9 @@
 | 연결 실패 응답이 몇 분씩 늦게 옴 | `spring.ai.retry` 설정이 빠져 기본값(최대 10회, 대기 간격 증가)으로 재시도 | `application.yml`의 `spring.ai.retry.max-attempts: 2`와 `backoff` 설정을 확인합니다 | [1장](./01-llm-and-spring-ai.md) |
 | "Gemini API 키가 설정되지 않았습니다. 환경 변수 GOOGLE_GENAI_API_KEY를 설정하거나 Ollama를 선택하세요." | `GOOGLE_GENAI_API_KEY`가 없어 `api-key`가 `not-set` | 오류가 아니라 의도한 안내입니다. Gemini를 쓰려면 환경 변수를 설정하고 다시 시작합니다 | [1장](./01-llm-and-spring-ai.md) |
 | "Gemini API 키가 올바르지 않습니다. GOOGLE_GENAI_API_KEY를 확인하세요." **(실제 사례)** | 키 값이 틀렸거나, 키가 공개 저장소에 올라가 Google이 차단함(`API key not valid`, `API key was reported as leaked`) | [Google AI Studio](https://aistudio.google.com/app/apikey)에서 기존 키를 지우고 새로 발급합니다. 키는 코드와 `application.yml`에 적지 않습니다 | [1장](./01-llm-and-spring-ai.md) |
-| 응답이 수십 초 이상 걸림 | 원격 Ollama의 3B 모델 + Tool 왕복 여러 번 | Gemini로 바꿔 비교합니다. 정규식으로 처리되는 문장은 LLM을 부르지 않아 빠릅니다 | [8장](./08-tool-calling-agent.md) |
+| 응답이 수십 초 이상 걸림 **(실제 사례)** | CPU에서 도는 Ollama 3B 모델이 긴 입력(Tool 정의 7개, 필드 9개짜리 Tool 결과)을 읽고 긴 답을 씀. 개선 전 Tool Calling 99.4초 | 실행 기록으로 구간별 시간을 잽니다. 넘기는 Tool 줄이기, Tool 결과 요약, 짧은 답변, `max-tokens`로 약 24초까지 줄였습니다. Gemini로 바꾸면 수 초입니다 | [8장](./08-tool-calling-agent.md) |
+| Gemini를 고르면 Tool 실행 직후 LLM 단계가 `Failed to parse JSON`으로 실패(Ollama는 정상) **(실제 사례)** | Spring AI의 Gemini 연동은 Tool 결과 문자열을 JSON으로 파싱해 함수 응답을 만드는데, Tool 결과가 일반 텍스트였음 | `ToolCallResultConverter`에서 결과를 `{"result": "..."}`처럼 JSON으로 감쌉니다(`CompactFlightResultConverter`) | [5장](./05-domain-tools.md) |
+| 앱이 기동하지 않고 Gemini 설정 오류가 남. 서버에는 Gemini 키를 넣지 않았음 **(실제 사례)** | 환경 변수 `GOOGLE_GENAI_API_KEY`가 **빈 문자열**로 설정됨(GitHub Secret이 없으면 workflow가 빈 값을 넘김). 빈 값이 있으면 `${GOOGLE_GENAI_API_KEY:not-set}`의 기본값이 쓰이지 않음 | `deploy/startup.sh`처럼 값이 비어 있으면 `unset GOOGLE_GENAI_API_KEY`합니다. 로컬에서는 `export GOOGLE_GENAI_API_KEY=` 대신 `unset`합니다 | [10장](./10-choosing-testing-operating.md) |
 | `I/O error ... Read timed out` | LLM 응답이 `spring.http.client.read-timeout`(300s)을 넘김 | 모델·서버 상태를 확인합니다. 값을 더 늘리기보다 작업 API를 씁니다 | [10장](./10-choosing-testing-operating.md) |
 
 ## 공공데이터 포털 API
@@ -53,6 +55,10 @@
 | 다른 요청의 Tool 기록이 섞임 | `stream()`이나 다른 스레드에서 Tool이 실행되어 `ThreadLocal`이 비워지지 않음 | `call()`을 쓰고 `ToolResultCaptureCleanupFilter`가 빈으로 등록되어 있는지 확인합니다 | [5장](./05-domain-tools.md) |
 | Advisor 로그에 Tool 호출이 보이지 않음 | 정상. Tool 루프는 ChatModel 안에서 돌아 Advisor에는 최종 응답만 보임 | Tool 호출은 trace의 TOOL 단계로 확인합니다 | [3장](./03-advisor.md) |
 | "검색 계획을 세우지 못했습니다..." | 작은 모델이 JSON 형식을 지키지 못해 `entity()` 결과가 비어 있음 | Gemini를 쓰거나 문장에 출발지·도착지를 분명히 넣습니다 | [9장](./09-orchestrator-workers.md) |
+| Ollama에서 Orchestrator 계획 단계가 JSON 변환 오류로 실패. 응답을 보면 JSON 자체는 멀쩡함 **(실제 사례)** | `qwen2.5:3b`가 JSON을 ` ```json ` 코드 블록으로 감싸고 앞뒤에 설명 문장을 붙임. Spring AI 기본 정리기는 응답 전체가 코드 블록일 때만 벗김 | `new BeanOutputConverter<>(SearchPlan.class, null, new LenientJsonCleaner())`로 JSON 부분만 꺼냅니다 | [2장](./02-chatclient.md) |
+| "이번 주 금요일"·"이번 주 토요일"이 하루 늦은 날짜로 검색됨(Gemini는 정상) **(실제 사례)** | 작은 모델이 오늘 날짜에서 요일을 잘못 계산함. 날짜표를 준 뒤에도 "이번 주 토요일"을 10-18로(정답 10-17) 고름 | 프롬프트에 날짜표(`DateContext.describe()`)를 넣고, 사용자 문장에는 `DateContext.annotate()`로 코드가 계산한 날짜를 붙여 보냅니다 | [2장](./02-chatclient.md) |
+| Orchestrator 작업에 말하지 않은 "10:00 이전 · 1,000원 이상" 같은 조건이 붙음 **(실제 사례)** | 작은 모델이 "제일 싼"을 가격 조건으로 옮기는 등 조건을 지어냄 | `FlightSearchPlanner.removeInventedConditions()`가 문장에 시간·가격 표현이 없으면 조건을 지웁니다 | [9장](./09-orchestrator-workers.md) |
+| Orchestrator가 4개여야 할 작업을 2개만 만듦 **(실제 사례)** | 작은 모델이 조합을 다 나누지 못함. 빠진 작업은 `validate()`가 채울 수 없음 | Gemini로 비교합니다. 반복해서 생기면 그 요청에 맞는 패턴을 다시 고릅니다 | [9장](./09-orchestrator-workers.md) |
 | "검색할 수 있는 작업이 없습니다..." | LLM의 계획이 모두 `validate()`에서 걸러짐(없는 공항, 출발=도착) | 지원하는 공항 이름으로 입력하고 로그의 "계획 검증" 경고를 확인합니다 | [9장](./09-orchestrator-workers.md) |
 | WORKER 막대가 겹치지 않고 계단처럼 이어짐 | Worker를 순차로 실행함(제출과 기다리기를 한 스트림에서 섞음) | "모두 제출한 뒤 모두 기다리기" 구조를 유지합니다 | [9장](./09-orchestrator-workers.md) |
 | 답변에 결과에 없는 항공편·가격이 나옴 | 종합 LLM의 환각 | system 프롬프트의 근거 제한 규칙을 확인하고 `results`의 실제 데이터와 대조합니다 | [9장](./09-orchestrator-workers.md) |
@@ -65,6 +71,8 @@
 | 화면에 `HTTP 504 - 서버가 응답하지 않습니다...`, 또는 동기 API가 1분쯤 뒤 `504 Gateway Time-out` **(실제 사례)** | LLM 호출이 nginx 기본 `proxy_read_timeout`(60초)을 넘김 | 화면처럼 작업 API(`POST /api/search/{pattern}/jobs` + `GET /api/search/jobs/{jobId}`)를 씁니다. nginx에는 `proxy_read_timeout 300s;`를 권장합니다 | [10장](./10-choosing-testing-operating.md) |
 | GitHub Actions의 `Check secrets` 단계가 실패하며 "GitHub Secrets에 DATA_GO_KR_SERVICE_KEY가 없습니다." | 저장소 Secrets에 서비스 키가 없음 | Settings > Secrets and variables > Actions에 `DATA_GO_KR_SERVICE_KEY`를 등록합니다 | [10장](./10-choosing-testing-operating.md) |
 | `run-script` 단계가 "[startup] 기동 실패. 최근 로그:"로 끝남 | 90초 안에 `http://localhost:{포트}/`가 응답하지 않음(설정 오류, 포트 충돌, Java 버전) | 함께 출력된 로그 50줄과 `~/fly-schedule/app.log`를 확인합니다 | [10장](./10-choosing-testing-operating.md) |
+| `git push`가 `ssh: connect to host github.com port 22: Operation timed out`으로 멈춤 **(실제 사례)** | 일부 회사·학교 네트워크가 SSH 기본 포트 22를 막음 | GitHub의 443 포트 SSH를 씁니다. `~/.ssh/config`에 `Host github.com`, `Hostname ssh.github.com`, `Port 443`을 적고 `ssh -T git@github.com`으로 확인합니다 | [10장](./10-choosing-testing-operating.md) |
+| HTTPS로 push하는데 `refusing to allow a Personal Access Token to create or update workflow ... without workflow scope` **(실제 사례)** | `.github/workflows/` 파일을 바꾼 커밋은 `workflow` 권한이 있는 토큰으로만 push할 수 있음 | 토큰에 `workflow` scope를 추가해 다시 발급하거나(fine-grained 토큰은 Workflows 쓰기 권한), SSH로 push합니다 | [10장](./10-choosing-testing-operating.md) |
 | 배포된 사이트에서 Gemini만 "키가 설정되지 않았습니다" | 서버의 `~/fly-schedule/.env`에 `GOOGLE_GENAI_API_KEY`가 없음 | `.env`에 키를 적고 다시 배포하거나 `startup.sh`를 다시 실행합니다 | [10장](./10-choosing-testing-operating.md) |
 | `/api/...` 요청이 `404`와 "요청한 경로를 찾을 수 없습니다: ..." | 경로 오타(예: `/api/mcp/airport`) 또는 HTTP 메서드가 다름 | `GlobalExceptionHandler`가 없는 경로를 `ApiResponse` 형식의 404로 돌려준 것입니다. 메시지의 경로를 [5장](./05-domain-tools.md)·[10장](./10-choosing-testing-operating.md)의 표와 비교합니다 | [5장](./05-domain-tools.md) |
 | 서버를 재시작한 뒤 조회하던 작업이 `404` | 작업은 메모리에만 있음. 끝난 작업도 10분 뒤 지워짐 | 화면에서 다시 검색합니다 | [10장](./10-choosing-testing-operating.md) |

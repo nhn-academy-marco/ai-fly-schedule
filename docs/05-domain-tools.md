@@ -8,7 +8,7 @@
 
 1. 공공데이터 포털 국내항공운항정보 API를 직접 호출해 응답 모양을 봅니다.
 2. `ApiClientService`로 API를 부르고, 실패를 `ExternalApiException`으로 알립니다.
-3. Tool 7개의 구조와 설계 원칙을 살펴봅니다.
+3. Tool 7개의 구조와 설계 원칙을 살펴보고, LLM에게 넘기는 결과를 짧게 바꾸는 `CompactFlightResultConverter`를 만듭니다.
 4. `ToolResultCapture`로 Tool 호출을 기록합니다.
 5. `McpController`로 LLM 없이 Tool을 직접 호출해 확인합니다.
 
@@ -383,7 +383,13 @@ Spring MVC의 `@RestController → Service → Repository`와 같은 모양입�
 > **팁**
 > `getAirportCode`는 공공데이터 포털을 부르지 않습니다. 그래서 서비스 키 없이도 동작합니다. 애플리케이션을 처음 띄웠을 때 Tool 경로가 살아 있는지 확인하기에 좋습니다(5.6절).
 
-이 Tool들을 LLM에게 넘기는 곳은 `ToolCallingSearchService` 한 곳뿐입니다. 빌더의 `defaultTools()`가 아니라 요청마다 `.tools(flightSearchTool, airportInfoTool, airlineInfoTool)`로 넘기는 이유는 [4장](04-tool-calling.md)에서 보았습니다.
+이 Tool들을 LLM에게 넘기는 곳은 `ToolCallingSearchService` 한 곳뿐입니다. 빌더의 `defaultTools()`가 아니라 요청마다 `.tools(...)`로 넘기는 이유는 [4장](04-tool-calling.md)에서 보았습니다. 그런데 7개를 모두 넘기지는 않습니다. 넘기는 것은 `FlightSearchTool` 하나, 곧 항공편 검색 Tool 3개뿐입니다.
+
+- 검색 Tool이 한글 공항 이름을 직접 받으므로(원칙 3) LLM이 `getAirportCode`를 먼저 부를 일이 없습니다. `getAirportList`, `getAirlineList`, `getAirlineId`도 항공편 검색에는 필요하지 않습니다.
+- LLM은 넘겨받은 Tool의 이름·설명·JSON 스키마를 **매번 입력으로 읽습니다.** 쓰지 않는 Tool 4개는 고를 선택지만 늘리고 입력 토큰을 늘립니다. CPU에서 돌리는 작은 모델에게는 이것이 곧 지연입니다([8장](08-tool-calling-agent.md)의 측정).
+- 공항·항공사 조회 Tool은 지우지 않았습니다. `McpController`(5.6절)로 직접 부를 수 있고, 나중에 MCP 서버로 노출할 때([10장](10-choosing-testing-operating.md)) 그대로 쓸 수 있습니다.
+
+Tool을 만들 수 있다고 해서 모두 넘길 필요는 없습니다. **그 요청에 필요한 Tool만 넘깁니다.**
 
 ---
 
@@ -403,7 +409,8 @@ LLM은 Tool의 코드를 보지 못합니다. Spring AI가 LLM에게 보내는 �
             description = "항공편을 검색하여 항공사별로 그룹핑하여 반환합니다. " +
                     "출발 공항, 도착 공항, 날짜를 받아 항공사별로 정리된 항공편 목록을 제공합니다. " +
                     "날짜는 '2026-03-25'(YYYY-MM-DD) 형식으로 전달합니다. " +
-                    "항공사별 최대 3편만 반환합니다."
+                    "항공사별 최대 3편만 반환합니다.",
+            resultConverter = CompactFlightResultConverter.class
     )
     public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
             @ToolParam(description = "출발 공항 이름 (예: 광주, 김포, 제주)") String departure,
@@ -445,7 +452,7 @@ LLM은 Tool의 코드를 보지 못합니다. Spring AI가 LLM에게 보내는 �
 
 ### 원칙 4. 결과 크기를 제한한다
 
-LLM은 Tool 결과를 프롬프트에 붙여 다시 읽습니다. 김포→제주 118편을 모두 돌려주면 항공편 하나에 필드 9개씩, 어림잡아 수천 토큰이 됩니다. `application.yml`의 Ollama 설정은 `num-ctx: 4096`입니다. 여기에 system 프롬프트와 Tool 7개의 설명까지 들어가야 합니다. 결과가 길면 작은 모델은 느려지거나, 앞부분을 잊거나, 답이 잘립니다.
+LLM은 Tool 결과를 프롬프트에 붙여 다시 읽습니다. 김포→제주 118편을 모두 돌려주면 항공편 하나에 필드 9개씩, 어림잡아 수천 토큰이 됩니다. `application.yml`의 Ollama 설정은 `num-ctx: 4096`입니다. 여기에 system 프롬프트와 Tool 설명까지 들어가야 합니다. 결과가 길면 작은 모델은 느려지거나, 앞부분을 잊거나, 답이 잘립니다.
 
 ```java
     /**
@@ -478,6 +485,69 @@ LLM은 Tool 결과를 프롬프트에 붙여 다시 읽습니다. 김포→제�
 | `FlightSearchTool.MAX_FLIGHTS_PER_AIRLINE` | 3 | LLM에게 **넘길 때**. 읽을 만큼만 준다 |
 
 받을 때는 넉넉하게, LLM에게 넘길 때는 조금만. 3편 제한은 Tool 결과에만 적용됩니다. Coordinator와 Orchestrator-Workers 패턴은 이 Tool을 거치지 않고 전문 Agent를 직접 쓰므로 화면에 모든 항공편이 나옵니다.
+
+### 원칙 4-2. 결과의 모양도 줄인다: CompactFlightResultConverter
+
+편수를 줄여도 한 편 한 편이 여전히 깁니다. Spring AI는 Tool이 돌려준 객체를 기본 변환기(`DefaultToolCallResultConverter`)로 JSON 문자열로 바꿔 LLM에게 넘깁니다. 항공편 하나가 `vihicleId`, `airlineNm`, `depAirportNm`, `arrAirportNm`, `depPlandTime`, `arrPlandTime`, `economyCharge`, `prestigeCharge`, `airlineId`처럼 필드 9개짜리 객체이므로, 항공사 5곳에서 3편씩만 남겨도 LLM은 같은 필드 이름을 수십 번 읽습니다. 데모 사이트의 Ollama 서버는 CPU로 모델을 돌리는데, 이런 입력을 읽는 데만 수십 초가 걸렸습니다.
+
+LLM이 답변에 실제로 쓰는 정보는 항공편명, 출발·도착 시각, 가격뿐입니다. 그래서 Tool 결과를 LLM에게 넘기기 전에 사람이 읽는 요약문처럼 바꿉니다. Spring AI에서 이 일을 하는 확장 지점이 **`ToolCallResultConverter`**이고, `@Tool`의 `resultConverter` 속성으로 Tool마다 지정합니다. 항공편 검색 Tool 3개 모두 `resultConverter = CompactFlightResultConverter.class`를 붙였습니다(위 발췌 참고).
+
+파일: `src/main/java/net/java21/flyschedule/mcp/CompactFlightResultConverter.java`
+
+```java
+public class CompactFlightResultConverter implements ToolCallResultConverter {
+
+    private final ToolCallResultConverter fallback = new DefaultToolCallResultConverter();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public String convert(Object result, Type returnType) {
+        if (!(result instanceof Map<?, ?> map)) {
+            return fallback.convert(result, returnType);
+        }
+        return toJson(summarize((Map<String, List<FlightInfoResponse>>) map));
+    }
+    // ... summarize(): 항공사별 한 줄 + 총 편수와 최저가
+
+    private String toJson(String text) {
+        try {
+            return objectMapper.writeValueAsString(Map.of("result", text));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Tool 결과를 JSON으로 바꾸지 못했습니다.", e);
+        }
+    }
+
+    private static String line(FlightView flight) {
+        String price = Objects.isNull(flight.price()) ? "가격 없음" : "%,d원".formatted(flight.price());
+        return "%s %s→%s %s".formatted(flight.flightId(), flight.departureTime(), flight.arrivalTime(), price);
+    }
+}
+```
+
+`summarize()`가 만드는 문장은 다음과 같습니다(`CompactFlightResultConverterTest.compactLines`의 기대값).
+
+```text
+제주항공 2편: 7C125 14:25→15:35 51,400원 / 7C127 16:40→17:50 가격 없음
+대한항공 1편: KE1235 15:00→16:10 89,000원
+총 3편, 최저가 제주항공 7C125 51,400원
+```
+
+**코드 읽기**
+
+- 항공사마다 한 줄, 항공편마다 `편명 출발→도착 가격`만 남깁니다. 시각과 가격 형식은 화면용 레코드 `FlightView`가 바꿔 줍니다(`202610171425` → `14:25`, 운임 0원 → `null` → "가격 없음").
+- 마지막 줄에 총 편수와 최저가를 코드가 계산해 붙입니다. 8장의 system 프롬프트가 "항공편 수와 가장 저렴한 항공편을 중심으로" 답하라고 하므로, LLM은 숫자를 비교할 필요 없이 이 줄을 옮기면 됩니다. 계산은 코드가, 문장은 LLM이 맡는 분업입니다.
+- 항공편 `Map`이 아닌 결과(예: 공항 코드 문자열)는 기본 변환기에 그대로 맡깁니다(`fallback`).
+- **결과를 `{"result": "..."}` JSON으로 감쌉니다.** 처음에는 요약 문장을 그대로 돌려주었습니다. Ollama에서는 잘 동작했지만, Gemini로 바꾸자 Tool 실행 직후 `Failed to parse JSON` 오류가 났습니다. Spring AI의 Gemini 연동(`GoogleGenAiChatModel`)은 Tool 결과 문자열을 JSON으로 파싱해 Gemini의 함수 응답(function response)을 만들기 때문입니다. 일반 텍스트는 JSON이 아니므로 파싱에 실패합니다. 키 하나짜리 JSON으로 감싸면 두 모델 모두 받아들입니다. 같은 Spring AI 코드라도 **제공자 연동마다 Tool 결과를 다루는 방식이 다를 수 있다**는 점을 기억해 둡니다.
+- 화면에 보여 줄 항공편 표는 영향을 받지 않습니다. 변환은 LLM에게 넘기는 문자열에만 일어나고, Tool 메서드가 돌려준 원래 `Map`은 `ToolResultCapture`(5.5절)가 그대로 보관합니다. `McpController`(5.6절)도 Tool 메서드를 직접 부르므로 원래 JSON을 돌려줍니다.
+
+> **직접 확인하기**
+> ```bash
+> ./mvnw test -Dtest=CompactFlightResultConverterTest
+> ```
+> 기대 결과: `Failures: 0, Errors: 0`. `muchShorterThanJson`은 같은 3편을 기본 JSON 변환과 비교해 길이가 3분의 1도 안 되는지, `wrapsAsJson`은 결과가 `result` 키 하나뿐인 올바른 JSON인지 확인합니다.
+
+이 두 가지 변경(Tool 3개만 넘기기, 결과 요약)이 실제로 응답 시간을 얼마나 줄였는지는 [8장](08-tool-calling-agent.md)의 "측정하고 개선하기"에서 숫자로 봅니다.
 
 ### 원칙 5. 실패하면 예외를 던진다
 
@@ -577,11 +647,11 @@ sequenceDiagram
     S->>R: bind(trace)로 실행 기록 연결
     S->>C: prompt().tools(...).call()
     rect rgb(241,235,253)
-    C->>L: 질문과 Tool 7개 설명
+    C->>L: 질문과 Tool 3개 설명
     L-->>C: searchFlightsByAirline 호출 요청
     C->>T: searchFlightsByAirline(광주, 제주, 2026-10-17)
     T->>R: capture()가 기록하고 TOOL 단계 바로 추가
-    T-->>C: 항공사별 최대 3편
+    T-->>C: 항공사별 최대 3편 요약문
     C->>L: Tool 결과 전달
     L-->>C: 한국어 답변
     end
@@ -705,6 +775,7 @@ Tool은 평범한 Spring Bean이므로 LLM 없이도 부를 수 있습니다. `M
 - 공공데이터 포털 API는 공항 코드(`NAARK..`)와 `YYYYMMDD`만 받고, `numOfRows`만큼만 돌려줍니다. 김포→제주는 하루 118편이므로 `MAX_ROWS = 500`으로 한 번에 받습니다.
 - `ApiClientService`는 Spring Boot가 만든 `RestClient.Builder`를 주입받아 타임아웃 설정을 적용하고, 키 누락·HTTP 실패·오류 코드를 빈 목록 대신 `ExternalApiException`으로 알립니다. 빈 목록은 "정말 항공편이 없다"는 뜻일 때만 나옵니다.
 - Tool은 입구일 뿐이고 일은 전문 Agent가 합니다. Tool은 하는 일을 말하는 이름, 반환과 제한까지 적은 설명, LLM이 채우기 쉬운 인자 형식, 작게 줄인 결과(`limitPerAirline`), 실패 시 예외를 갖춥니다.
+- `CompactFlightResultConverter`는 LLM에게 넘기는 결과를 한 줄 요약으로 바꾸고 `{"result": ...}`로 감쌉니다(Gemini는 Tool 결과를 JSON으로 파싱). Tool Calling에는 필요한 검색 Tool 3개만 넘깁니다.
 - `ToolResultCapture.capture(이름, 인자 요약, () -> 작업)`은 작업을 실행하며 결과·실패·시각을 `ThreadLocal`에 순서대로 기록하고, `ToolResultCaptureCleanupFilter`가 요청마다 이를 비웁니다.
 - `McpController`로 LLM 없이 Tool을 직접 불러, 문제가 Tool에 있는지 LLM의 선택에 있는지 가릅니다.
 

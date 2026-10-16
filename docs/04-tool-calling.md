@@ -127,15 +127,17 @@ Spring AI는 이 정보로 Tool 정의를 만들어 LLM API에 보냅니다. `mu
 파일: `src/main/java/net/java21/flyschedule/service/toolcalling/ToolCallingSearchService.java` (일부)
 
 ```java
-String answer = chatClientProvider.get(model).prompt()
-        .system(systemPrompt())
-        .user(message)
-        .tools(flightSearchTool, airportInfoTool, airlineInfoTool)
-        .call()
-        .content();
+            String answer = chatClientProvider.get(model).prompt()
+                    .system(systemPrompt())
+                    .user(DateContext.annotate(message)) // 날짜 표현 옆에 코드가 계산한 날짜를 붙여 보낸다
+                    // 항공편 검색 Tool 3개만 넘긴다. 공항·항공사 조회 Tool(AirportInfoTool, AirlineInfoTool)은
+                    // 검색 Tool이 한글 공항 이름을 직접 받으므로 필요 없고, 넘기면 LLM이 매번 읽어야 할 Tool 설명만 늘어난다
+                    .tools(flightSearchTool)
+                    .call()
+                    .content();
 ```
 
-코드 읽기: `.tools(...)`에는 `@Tool` 메서드를 가진 **객체**를 넘깁니다. 세 객체에 든 Tool 7개가 이 요청에만 붙습니다. `.call()` 안에서 앞 그림의 왕복이 필요한 만큼 반복되고, `.content()`는 마지막 답변만 돌려줍니다. Tool 7개의 설계는 [5장](05-domain-tools.md), 이 서비스 전체는 [8장](08-tool-calling-agent.md)에서 읽습니다.
+코드 읽기: `.tools(...)`에는 `@Tool` 메서드를 가진 **객체**를 넘깁니다. `FlightSearchTool` 객체에 든 항공편 검색 Tool 3개가 이 요청에만 붙습니다. 프로젝트에는 Tool이 7개 있지만 필요한 것만 넘깁니다. `.call()` 안에서 앞 그림의 왕복이 필요한 만큼 반복되고, `.content()`는 마지막 답변만 돌려줍니다. Tool 7개의 설계와 3개만 넘기는 이유는 [5장](05-domain-tools.md), 이 서비스 전체는 [8장](08-tool-calling-agent.md)에서 읽습니다.
 
 같은 ChatClient를 Tool이 필요 없는 곳에서도 쓰기 때문에 이렇게 합니다.
 
@@ -156,7 +158,7 @@ String answer = chatClientProvider.get(model).prompt()
 > ./mvnw test -Dtest=ToolCallingSearchServiceTest#passesToolsPerRequest
 > ```
 >
-> 기대 결과: `Tests run: 1, Failures: 0`. 이 테스트는 가짜 ChatClient로 `search()`를 실행한 뒤, 요청에 `tools(...)`가 Tool 객체 세 개로 호출되었는지(`verify(requestSpec).tools(any(), any(), any())`)와 system 프롬프트에 오늘 날짜가 들어갔는지 검증합니다. 진짜 LLM 없이 Tool Calling 코드를 테스트하는 방법은 10장에서 정리합니다.
+> 기대 결과: `Tests run: 1, Failures: 0`. 이 테스트는 가짜 ChatClient로 `search()`를 실행한 뒤, 요청에 `tools(...)`가 항공편 검색 Tool 객체 하나로 호출되었는지(`verify(requestSpec).tools(flightSearchTool)`)와 system 프롬프트에 오늘 날짜가 들어갔는지 검증합니다. 진짜 LLM 없이 Tool Calling 코드를 테스트하는 방법은 10장에서 정리합니다.
 
 ## 실습: LLM이 계산기를 부르게 하기
 
@@ -344,4 +346,4 @@ Tool Calling을 쓰면 코드에서 LLM 호출은 `call()` 한 번이지만, 모
 - 힌트: `@ToolParam.required`의 기본값은 `true`입니다. 계산기에 `@ToolParam(description = "...", required = false) Long c` 같은 파라미터를 추가하고, `required`를 뺐을 때와 넣었을 때 Tool 정의(JSON 스키마의 `required` 목록)를 비교해 봅니다.
 - 완료 기준: `required = false`가 없으면 파라미터가 LLM에게 필수로 전달된다는 것을 설명하고, 선택 파라미터의 타입을 `long`이 아니라 `Long`으로 써야 하는 이유를 한 문장으로 쓴다.
 
-계산기는 원리를 보기 위한 장난감이었습니다. 다음 장에서는 공공데이터 포털의 실제 운항 정보로 항공편 검색 Tool 7개를 만들고, Tool을 어떻게 설계해야 작은 LLM도 잘 쓰는지 살펴봅니다. [5장 항공편 도메인 Tool 만들기](05-domain-tools.md)
+계산기는 원리를 보기 위한 장난감이었습니다. 다음 장에서는 공공데이터 포털의 실제 운항 정보로 항공편 Tool 7개를 만들고, Tool을 어떻게 설계해야 작은 LLM도 잘 쓰는지 살펴봅니다. [5장 항공편 도메인 Tool 만들기](05-domain-tools.md)

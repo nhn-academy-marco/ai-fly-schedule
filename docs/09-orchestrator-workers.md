@@ -68,31 +68,35 @@ public record SearchPlan(
 `src/main/java/net/java21/flyschedule/service/orchestrator/FlightSearchPlanner.java`
 
 ```java
-public SearchPlan plan(String message, ChatClient chatClient) {
-    SearchPlan plan = chatClient.prompt()
-            .system("""
-                    당신은 국내선 항공편 검색 작업을 나누는 Orchestrator입니다.
-                    사용자 요청에 출발지, 도착지, 날짜 후보가 여러 개 있으면 조합마다 검색 작업을 하나씩 만드세요.
-                    조건이 하나뿐이면 작업도 하나입니다. 작업은 최대 %d개까지만 만드세요.
-                    오늘 날짜는 %s(%s)입니다. "이번 주 금요일" 같은 표현은 YYYY-MM-DD로 바꾸세요.
-                    공항은 한글 이름(광주, 김포, 제주 등)으로 적고, 없는 조건은 null로 둡니다.
-                    """.formatted(MAX_TASKS, LocalDate.now(), LocalDate.now().getDayOfWeek()))
-            .user(message)
-            .call()
-            .entity(SearchPlan.class);
+    public SearchPlan plan(String message, ChatClient chatClient) {
+        SearchPlan plan = chatClient.prompt()
+                .system("""
+                        당신은 국내선 항공편 검색 작업을 나누는 Orchestrator입니다.
+                        사용자 요청에 출발지, 도착지, 날짜 후보가 여러 개 있으면 조합마다 검색 작업을 하나씩 만드세요.
+                        조건이 하나뿐이면 작업도 하나입니다. 작업은 최대 %d개까지만 만드세요.
+                        "이번 주 금요일" 같은 날짜는 계산하지 말고 아래 날짜표에서 찾아 YYYY-MM-DD로 적으세요.
+                        공항은 한글 이름(광주, 김포, 제주 등)으로 적고, 없는 조건은 null로 둡니다.
 
-    return validate(plan);
-}
+                        %s
+                        """.formatted(MAX_TASKS, DateContext.describe()))
+                .user(DateContext.annotate(message)) // 날짜 표현 옆에 코드가 계산한 날짜를 붙여 보낸다
+                .call()
+                // 작은 모델이 JSON 앞뒤에 문장을 붙여도 JSON 부분만 읽는다
+                .entity(new BeanOutputConverter<>(SearchPlan.class, null, new LenientJsonCleaner()));
+
+        return validate(plan, message);
+    }
 ```
 
 코드 읽기
 
-1. `.entity(SearchPlan.class)`: [2장](02-chatclient.md)에서 본 **Structured Output**입니다. Spring AI가 레코드에서 JSON 스키마를 만들어 프롬프트에 붙이고, LLM의 JSON 응답을 `SearchPlan`으로 바꿔 줍니다.
+1. `.entity(new BeanOutputConverter<>(SearchPlan.class, null, new LenientJsonCleaner()))`: [2장](02-chatclient.md)에서 본 **Structured Output**입니다. Spring AI가 레코드에서 JSON 스키마를 만들어 프롬프트에 붙이고, LLM의 JSON 응답을 `SearchPlan`으로 바꿔 줍니다. 세 번째 인자 `LenientJsonCleaner`는 응답에서 JSON 부분만 꺼냅니다. 데모 사이트에서 `qwen2.5:3b`가 계획 JSON을 코드 블록으로 감싸고 앞뒤에 "다음은 검색 계획입니다:" 같은 문장을 붙여, 기본 정리기로는 읽지 못하고 계획 단계가 실패한 일이 있었습니다(자세한 내용은 [2장](02-chatclient.md)).
 2. `@JsonPropertyDescription`: 스키마에 들어가는 필드 설명입니다. LLM은 이 설명을 읽고 값을 채웁니다. `SearchCriteria`의 각 필드에도 같은 설명이 붙어 있습니다("출발 날짜, YYYY-MM-DD 형식" 등).
 3. `reasoning`이 `tasks`보다 앞에 있습니다. LLM은 앞 필드부터 쓰므로, 이유를 먼저 한 문장 적고 나서 목록을 만들게 됩니다. 결과에는 쓰지 않지만 나누는 품질에 도움이 됩니다.
-4. 프롬프트에 **오늘 날짜와 요일**을 함께 넣습니다. "이번 주 금요일"을 계산하려면 오늘이 무슨 요일인지 알아야 합니다.
+4. 날짜는 두 겹으로 줍니다. 프롬프트 끝에 **날짜표**(`DateContext.describe()`)를 넣고, 사용자 문장은 `DateContext.annotate(message)`로 날짜를 붙여 보냅니다. 오늘이 2026-10-16(금)인 날 "이번 주 금요일이나 토요일"을 Gemini는 10-16·10-17로, `qwen2.5:3b`는 10-17·10-18로 계획했습니다. 날짜표를 넣은 뒤에도 작은 모델이 틀리는 일이 남아, 지금은 LLM이 `이번 주 금요일(2026-10-16)이나 토요일(2026-10-17)`을 받습니다. 날짜를 정하는 일은 코드가 끝냈고, LLM은 조합을 나누기만 하면 됩니다([2장](02-chatclient.md)).
 5. "조합마다 하나씩"은 곱으로 나누는 규칙, "조건이 하나뿐이면 작업도 하나"는 단순한 요청을 쓸데없이 쪼개지 않게 하는 규칙입니다.
 6. `.tools(...)`가 없습니다. Planner는 계획만 하고 검색은 하지 않습니다.
+7. `validate(plan, message)`: 검증에 사용자 문장도 넘깁니다. 문장에 없는 조건을 LLM이 지어냈는지 보기 위해서입니다(9.3).
 
 ## 9.3 validate — LLM의 출력을 그대로 믿지 않는다
 
@@ -101,31 +105,32 @@ LLM이 만든 계획은 **사용자 입력과 같은 수준으로** 검증합니
 `src/main/java/net/java21/flyschedule/service/orchestrator/FlightSearchPlanner.java`
 
 ```java
-SearchPlan validate(SearchPlan plan) {
-    if (plan == null || plan.tasks() == null) {
-        throw new IllegalArgumentException("검색 계획을 세우지 못했습니다. 출발지와 도착지를 포함해 다시 입력해 주세요.");
-    }
+    SearchPlan validate(SearchPlan plan, String message) {
+        if (plan == null || plan.tasks() == null) {
+            throw new IllegalArgumentException("검색 계획을 세우지 못했습니다. 출발지와 도착지를 포함해 다시 입력해 주세요.");
+        }
 
-    // "광주"와 "광주공항"은 같은 공항이므로, 출발=도착 검사와 중복 제거는 공항 코드로 비교한다
-    Set<List<Object>> seen = new HashSet<>();
-    List<SearchCriteria> tasks = plan.tasks().stream()
-            .filter(SearchCriteria::hasRoute)
-            .filter(task -> airportCodeAgent.isValidAirport(task.departure())
-                    && airportCodeAgent.isValidAirport(task.arrival()))
-            .filter(task -> !departureCode(task).equals(arrivalCode(task)))
-            .filter(task -> seen.add(Arrays.asList(departureCode(task), arrivalCode(task), task.date(),
-                    task.afterTime(), task.beforeTime(), task.minPrice(), task.maxPrice())))
-            .limit(MAX_TASKS)
-            .toList();
+        // "광주"와 "광주공항"은 같은 공항이므로, 출발=도착 검사와 중복 제거는 공항 코드로 비교한다
+        Set<List<Object>> seen = new HashSet<>();
+        List<SearchCriteria> tasks = plan.tasks().stream()
+                .filter(SearchCriteria::hasRoute)
+                .map(task -> removeInventedConditions(task, message))
+                .filter(task -> airportCodeAgent.isValidAirport(task.departure())
+                        && airportCodeAgent.isValidAirport(task.arrival()))
+                .filter(task -> !departureCode(task).equals(arrivalCode(task)))
+                .filter(task -> seen.add(Arrays.asList(departureCode(task), arrivalCode(task), task.date(),
+                        task.afterTime(), task.beforeTime(), task.minPrice(), task.maxPrice())))
+                .limit(MAX_TASKS)
+                .toList();
 
-    if (tasks.size() < plan.tasks().size()) {
-        log.warn("계획 검증: 작업 {}개 중 {}개만 사용", plan.tasks().size(), tasks.size());
+        if (tasks.size() < plan.tasks().size()) {
+            log.warn("계획 검증: 작업 {}개 중 {}개만 사용", plan.tasks().size(), tasks.size());
+        }
+        if (tasks.isEmpty()) {
+            throw new IllegalArgumentException("검색할 수 있는 작업이 없습니다. 지원하는 공항 이름으로 다시 입력해 주세요.");
+        }
+        return new SearchPlan(plan.reasoning(), tasks);
     }
-    if (tasks.isEmpty()) {
-        throw new IllegalArgumentException("검색할 수 있는 작업이 없습니다. 지원하는 공항 이름으로 다시 입력해 주세요.");
-    }
-    return new SearchPlan(plan.reasoning(), tasks);
-}
 ```
 
 | 검증 | 막는 실수 |
@@ -136,8 +141,66 @@ SearchPlan validate(SearchPlan plan) {
 | 출발 ≠ 도착(공항 코드로) | "제주 → 제주", "김해 → 부산"(같은 공항) |
 | 중복 제거(공항 코드로) | 같은 작업을 두 번, 또는 "광주 → 제주"와 "광주공항 → 제주국제공항"처럼 이름만 다른 같은 작업 |
 | `limit(MAX_TASKS)` | 프롬프트의 "최대 4개"를 무시하고 10개를 만들어 API 호출이 폭주 |
+| `removeInventedConditions` | 문장에 없는 시간·가격 조건을 지어냄(아래) |
 
 프롬프트로 한 번("최대 4개까지만"), 코드로 한 번(`limit`) 막습니다. 프롬프트는 부탁이고 코드는 보장입니다. 검증에 실패하면 `IllegalArgumentException`이 나고, Orchestrator는 Worker와 종합 단계를 실행하지 않고 안내 문장으로 응답합니다.
+
+### 지어낸 조건 지우기
+
+운영 중인 데모 사이트에서 `qwen2.5:3b`로 "이번 주 금요일이나 토요일에 김포나 광주에서 제주 가는 제일 싼 항공편"을 검색했을 때, 계획에 이상한 작업이 섞였습니다. 사용자는 시각도 가격 범위도 말하지 않았는데 작업에 "10:00 이전 · 1,000원 이상"이 붙어 있었습니다. "제일 싼"이라는 말을 가격 **조건**으로 잘못 옮긴 것입니다. "제일 싼"은 범위가 아니라 결과를 비교하라는 뜻이고, 비교는 종합 단계(9.6)가 합니다. 프롬프트에는 이미 "없는 조건은 null로 둡니다"가 있었지만 지켜지지 않았습니다.
+
+문장에 시간이나 가격이 있는지는 정규식으로 확실히 알 수 있습니다. 그래서 이 판단은 코드가 맡습니다.
+
+```java
+    private static final Pattern TIME_IN_MESSAGE = Pattern.compile("\\d{1,2}\\s*시|\\d{1,2}:\\d{2}");
+    private static final Pattern PRICE_IN_MESSAGE = Pattern.compile("\\d+\\s*(만\\s*)?원");
+
+    /**
+     * 문장에 시간·가격이 없는데 LLM이 붙인 조건을 지웁니다.
+     * 운영에서 작은 모델이 "제일 싼 항공편"이라는 말에 "10:00 이전, 1,000원 이상"을 지어낸 사례가 있었습니다.
+     * ("제일 싼"은 가격 범위가 아니라 결과를 비교하라는 뜻이므로 범위 조건이 필요 없습니다.)
+     */
+    static SearchCriteria removeInventedConditions(SearchCriteria task, String message) {
+        if (message == null) {
+            return task;
+        }
+        boolean hasTime = TIME_IN_MESSAGE.matcher(message).find();
+        boolean hasPrice = PRICE_IN_MESSAGE.matcher(message).find();
+        return new SearchCriteria(task.departure(), task.arrival(), task.date(),
+                hasTime ? task.afterTime() : null,
+                hasTime ? task.beforeTime() : null,
+                hasPrice ? task.minPrice() : null,
+                hasPrice ? task.maxPrice() : null);
+    }
+```
+
+**코드 읽기**
+
+- 문장에 "2시", "14:00" 같은 시간 표현이 없으면 작업의 `afterTime`·`beforeTime`을, "5만원", "60000원" 같은 가격 표현이 없으면 `minPrice`·`maxPrice`를 지웁니다.
+- 문장에 시간이 **있으면** LLM이 옮긴 값을 그대로 둡니다. "오후 2시"를 "14:00"으로 바꾸는 해석은 LLM에게 맡기고, "조건이 있었는가"라는 사실 확인만 코드가 합니다.
+- `validate(plan)`(인자 하나)는 `message`를 `null`로 넘겨 이 단계를 건너뜁니다. 계획만으로 검증하는 기존 테스트가 그대로 동작합니다.
+
+이 사례와 날짜 사례(9.2의 4번)는 같은 원칙을 가리킵니다. **코드가 확실히 할 수 있는 일은 LLM에게 맡기지 않는다.** 날짜 계산, 조건이 문장에 있었는지 확인하기는 코드가 틀리지 않습니다. LLM에게는 코드로 정하기 어려운 일, 곧 "김포나 광주", "금요일이나 토요일"을 조합으로 나누는 일만 남깁니다.
+
+> **생각해 보기**
+> 같은 운영 기록에서 작은 모델은 2 × 2 = 4개여야 할 작업을 2개만 만들었습니다. 지어낸 조건은 코드가 지울 수 있지만, **빠진 작업**은 `validate()`가 채워 넣을 수 없습니다. 어떤 실수는 코드가 고칠 수 있고, 어떤 실수는 모델을 바꾸거나(같은 요청에서 Gemini는 4개를 만들었습니다) 패턴을 바꿔야 합니다. 작업 수를 코드로 확인할 방법이 있을까요? 공항 후보와 날짜 후보를 정규식으로 세어 곱과 비교한다면 어떤 문장에서 틀릴까요?
+
+날짜를 코드가 붙이고(`DateContext.annotate`) 지어낸 조건을 지우도록(`removeInventedConditions`) 고친 뒤, 같은 문장을 데모 사이트에서 다시 실행한 결과는 다음과 같습니다(Ollama qwen2.5:3b, 2026-10-16 금요일).
+
+| 항목 | 고치기 전 | 고친 뒤 |
+|---|---|---|
+| 날짜 | 2026-10-16 / 10-17 (날짜표만 준 경우) | 2026-10-16 / 10-17 |
+| 지어낸 조건 | "10:00 이전 · 1,000원 이상" | 없음 |
+| 작업 수 | 2개 (광주 누락) | 2개 (광주 누락) — 코드로 고칠 수 없는 실수 |
+| 전체 시간 | 약 28초 | 약 27초 (계획 21.8초, Worker 0.1초, 종합 5.1초) |
+
+코드가 확실히 할 수 있는 일(날짜 계산, 근거 없는 조건 거르기)은 코드로 옮기자 바로 고쳐졌고, 판단이 필요한 일(요청을 몇 개로 나눌지)은 모델의 능력에 그대로 남았습니다. 이것이 이 책이 처음부터 붙든 질문, "다음 단계를 누가 결정하는가"에 대한 실전의 답입니다.
+
+> **직접 확인하기**
+> ```bash
+> ./mvnw test -Dtest=FlightSearchPlannerTest
+> ```
+> 기대 결과: `Failures: 0, Errors: 0`. `removesInventedConditions`는 "제일 싼 항공편" 문장에서 `10:00 이전`·`1,000원 이상`이 지워지는지, `keepsRealConditions`는 "오후 2시 이후 6만원 이하"처럼 문장에 있는 조건은 남는지, `sendsAnnotatedMessage`는 LLM에게 날짜를 붙인 문장이 가는지 확인합니다.
 
 `validate()`는 패키지 접근 수준이라 같은 패키지의 테스트에서 LLM 없이 바로 부를 수 있습니다. LLM 호출과 검증을 분리해 두면 테스트가 쉬워집니다.
 
@@ -338,7 +401,7 @@ public String synthesize(String message, List<TaskResult> results, ChatClient ch
 
 | 단계 | 실패 예 | 처리 | 이유 |
 |---|---|---|---|
-| 계획 | JSON 깨짐, 알 수 없는 공항만 있음, Gemini 키 없음 | `success: false`, Worker·종합 실행 안 함 | 계획이 없으면 진행할 수 없다 |
+| 계획 | JSON 깨짐(문장에 섞인 JSON은 `LenientJsonCleaner`가 꺼냄), 알 수 없는 공항만 있음, Gemini 키 없음 | `success: false`, Worker·종합 실행 안 함 | 계획이 없으면 진행할 수 없다 |
 | Worker | `ExternalApiException`, 날짜 형식 오류 | 그 작업만 빈 결과, 나머지는 정상 | 4개 중 3개로도 추천할 수 있다 |
 | 종합 | LLM 연결 실패, 빈 답 | 코드 요약(`fallbackSummary`)으로 대신 | 검색 결과는 이미 있다 |
 
@@ -352,7 +415,14 @@ public String synthesize(String message, List<TaskResult> results, ChatClient ch
 | 작업 수가 늘면 | 처리 불가 | 왕복이 그만큼 순차로 늘어남 | LLM 호출은 그대로, Worker만 병렬로 늘어남 |
 | 같은 입력에 같은 결과 | 예 | 보장되지 않음 | 계획만 달라질 수 있음. 검색은 코드라 같음 |
 
-Coordinator의 정규식 경로는 실측 약 0.6초였고 대부분이 공공데이터 API 대기였습니다. Orchestrator는 Worker 4개를 병렬로 돌리므로 검색 시간은 Coordinator 한 번과 비슷하지만, LLM 호출 두 번이 더해집니다. 원격 Ollama 3B 모델은 호출 한 번에 수십 초가 걸리기도 하므로 두 번이면 nginx의 기본 60초 제한을 넘기기 쉽습니다. 화면이 작업 API를 쓰는 이유입니다.
+Coordinator의 정규식 경로는 실측 약 0.6초였고 대부분이 공공데이터 API 대기였습니다. Orchestrator는 Worker 4개를 병렬로 돌리므로 검색 시간은 Coordinator 한 번과 비슷하지만, LLM 호출 두 번이 더해집니다. 데모 사이트에서 복합 예시를 실행한 실측은 다음과 같습니다.
+
+| 모델 | 전체 | 계획(LLM) | Worker 4개(병렬) | 종합(LLM) |
+|---|---|---|---|---|
+| Gemini 3.5 Flash-Lite | 3.9초 | 2.5초 | 약 0.1초 | 1.3초 |
+| Ollama qwen2.5:3b | 31.5초 | 22.1초 | 약 0.1초 | 9.3초 |
+
+검색 네 번은 0.1초 안팎으로 끝나고, 시간은 거의 모두 LLM 두 번에 쓰입니다. Ollama에서는 계획이 특히 깁니다. JSON 스키마가 붙은 긴 입력을 읽고 작업 네 개짜리 JSON을 한 토큰씩 써야 하기 때문입니다. 원격 Ollama가 30초를 넘기면 동기 요청은 nginx의 기본 60초 제한에 가까워집니다. 화면이 작업 API를 쓰는 이유입니다. 시간이 어디에 쓰이는지 읽는 법과 줄이는 손잡이는 [8장](08-tool-calling-agent.md)의 "측정하고 개선하기"에 정리했습니다.
 
 ## 9.9 테스트 — 병렬성을 어떻게 증명하는가
 
@@ -367,7 +437,7 @@ ChatClient chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
 SearchPlan fromLlm = plan(
         task("김포", "제주", "2026-03-27"), task("김포", "제주", "2026-03-28"),
         task("광주", "제주", "2026-03-27"), task("광주", "제주", "2026-03-28"));
-when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(SearchPlan.class))
+when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchPlan>>any()))
         .thenReturn(fromLlm);
 ```
 
@@ -409,7 +479,7 @@ void workersRunInParallel() {
 ## 핵심 정리
 
 - Orchestrator-Workers 패턴은 LLM이 요청을 하위 작업으로 나누고(Planner), 코드가 병렬로 실행하고(Worker), LLM이 종합합니다(Synthesizer). 하위 작업의 개수가 미리 정해져 있지 않다는 점이 Coordinator와 다릅니다.
-- 계획은 `.entity(SearchPlan.class)`와 `@JsonPropertyDescription`으로 받고, `validate()`로 공항·중복·개수를 검증합니다. 프롬프트는 부탁, 코드는 보장입니다.
+- 계획은 `BeanOutputConverter`(+ `LenientJsonCleaner`)와 `@JsonPropertyDescription`으로 받고, `validate()`로 공항·중복·개수를 검증하며 문장에 없는 시간·가격 조건을 지웁니다. 날짜는 코드가 문장에 붙여 보냅니다. 프롬프트는 부탁, 코드는 보장입니다.
 - Worker는 7장의 `FlightSearchCoordinator.search()`를 재사용합니다. 패턴은 서로 조합되는 부품입니다.
 - 가상 스레드와 "모두 제출한 뒤 모두 기다리기"로 Worker를 병렬 실행하고, 화면의 겹친 WORKER 막대와 `virtual-N` 스레드 이름, 테스트의 시간 비교로 확인합니다.
 - Synthesizer에는 요약 한 줄씩만 보내고, 실패는 단계의 중요도에 따라 다르게 다룹니다.

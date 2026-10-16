@@ -14,10 +14,12 @@
 | Agent | LLM이 다음 단계(어떤 Tool을 언제 부를지)를 스스로 정하는 구조. 이 책에서는 영어로 씀 | [들어가며](./00-introduction.md) |
 | Awaitility | 비동기 코드의 결과를 "조건이 참이 될 때까지, 최대 몇 초" 기다리는 테스트 라이브러리 | [10장](./10-choosing-testing-operating.md) |
 | BOM (Bill of Materials) | 관련 라이브러리 버전을 한곳에서 맞추는 Maven 설정. `spring-ai-bom` | [1장](./01-llm-and-spring-ai.md) |
+| `CompactFlightResultConverter` | 항공편 검색 Tool의 결과를 항공사별 한 줄 요약으로 바꾸고 `{"result": ...}` JSON으로 감싸 LLM에게 넘기는 `ToolCallResultConverter` | [5장](./05-domain-tools.md) |
 | `CallAdvisor` | 동기 호출(`call()`)에 끼어드는 Advisor 인터페이스. `getOrder()` 값으로 순서가 정해짐 | [3장](./03-advisor.md) |
 | ChatClient | Spring AI에서 LLM을 부르는 기본 API. `prompt().system().user().call()` 형태의 체인 | [2장](./02-chatclient.md) |
 | `ChatClientProvider` | 요청의 모델 이름(`ollama`, `gemini`)으로 ChatClient를 골라 주고, LLM 오류를 사용자용 문장으로 바꾸는 컴포넌트 | [2장](./02-chatclient.md) |
 | `content()` | LLM 응답을 문자열로 받는 메서드. Tool Calling에서는 이 호출 안에서 Tool이 실행됨 | [2장](./02-chatclient.md) |
+| `DateContext` | 날짜를 코드가 정하는 도우미. `describe()`는 프롬프트용 날짜표를, `annotate()`는 문장 속 "이번 주 토요일" 옆에 `(2026-10-17)`처럼 계산한 날짜를 붙임 | [2장](./02-chatclient.md) |
 | Coordinator 패턴 | 코드가 처리 순서를 정하고 전문 Agent를 차례로 호출하는 구조. 이 책의 workflow 예 | [7장](./07-coordinator.md) |
 | `defaultTools` | ChatClient를 만들 때 모든 요청에 붙는 Tool. 이 프로젝트는 쓰지 않고 요청마다 `.tools(...)`로 넘김 | [4장](./04-tool-calling.md) |
 | `entity()` | LLM 응답 JSON을 자바 객체로 바로 받는 메서드. Structured Output의 입구 | [2장](./02-chatclient.md) |
@@ -25,9 +27,10 @@
 | `ExecutionTrace` | 한 요청의 실행 단계를 시간·스레드와 함께 쌓는 기록. 화면 타임라인의 원본 | [7장](./07-coordinator.md) |
 | `ExternalApiException` | 공공데이터 포털 호출 실패(키 없음, HTTP 오류, 오류 코드)를 "항공편 없음"과 구분해 알리는 예외 | [5장](./05-domain-tools.md) |
 | Function Calling | Tool Calling의 다른 이름. 모델 제공사에 따라 이렇게 부름 | [4장](./04-tool-calling.md) |
-| Gemini | Google의 LLM. 이 프로젝트는 `gemini-2.5-flash`를 쓰며 키(`GOOGLE_GENAI_API_KEY`)는 선택 | [1장](./01-llm-and-spring-ai.md) |
+| Gemini | Google의 LLM. 이 프로젝트는 무료 등급에서 쓸 수 있는 `gemini-3.5-flash-lite`를 쓰며 키(`GOOGLE_GENAI_API_KEY`)는 선택 | [1장](./01-llm-and-spring-ai.md) |
 | GitHub Actions | 저장소 이벤트(push 등)에 맞춰 빌드·배포를 실행하는 GitHub 기능. `.github/workflows/maven.yml` | [10장](./10-choosing-testing-operating.md) |
 | GitHub Secrets | workflow에서만 읽을 수 있게 저장하는 비밀 값. 서버 접속 정보와 서비스 키를 둠 | [10장](./10-choosing-testing-operating.md) |
+| `LenientJsonCleaner` | LLM 응답에서 JSON 부분(코드 블록 안, 또는 첫 `{`부터 마지막 `}`까지)만 꺼내는 `ResponseTextCleaner`. 작은 모델이 JSON 앞뒤에 문장을 붙여도 Structured Output이 동작하게 함 | [2장](./02-chatclient.md) |
 | grounding (근거 제한) | "Tool 결과에 없는 내용은 지어내지 마라"처럼 답의 근거를 주어진 자료로 묶는 프롬프트 규칙 | [2장](./02-chatclient.md) |
 | `@JsonPropertyDescription` | Structured Output에서 각 필드의 뜻과 형식을 LLM에게 알려 주는 Jackson 어노테이션 | [2장](./02-chatclient.md) |
 | LLM (Large Language Model) | 대량의 글로 학습해 다음 토큰을 예측하며 문장을 만드는 모델 | [1장](./01-llm-and-spring-ai.md) |
@@ -46,6 +49,7 @@
 | Orchestrator-Workers 패턴 | LLM이 요청을 하위 작업으로 나누고, Worker(코드)가 실행하고, LLM이 종합하는 구조 | [9장](./09-orchestrator-workers.md) |
 | Planner | Orchestrator의 계획 단계. `FlightSearchPlanner`가 LLM으로 `SearchPlan`을 만들고 `validate()`로 검증 | [9장](./09-orchestrator-workers.md) |
 | `proxy_read_timeout` | nginx가 뒤쪽 서버의 응답을 기다리는 최대 시간. 기본 60초, 이 책은 300초를 권장 | [10장](./10-choosing-testing-operating.md) |
+| `ResponseTextCleaner` | Spring AI의 Structured Output 변환기(`BeanOutputConverter`)가 응답을 JSON으로 읽기 전에 거치는 정리기 인터페이스. 기본 정리기는 응답 전체가 코드 블록일 때만 표시를 벗김 | [2장](./02-chatclient.md) |
 | RestClient | Spring의 동기 HTTP 클라이언트. 공공데이터 포털 호출에 씀 | [5장](./05-domain-tools.md) |
 | `RETURNS_DEEP_STUBS` | 메서드 체인의 중간 객체를 자동으로 만드는 Mockito 설정. ChatClient 체인을 한 줄로 흉내 냄 | [7장](./07-coordinator.md) |
 | `RETURNS_SELF` | 빌더 메서드가 자기 자신을 돌려주게 하는 Mockito 설정. `ChatClientRequestSpec` 흉내에 씀 | [8장](./08-tool-calling-agent.md) |
@@ -57,11 +61,13 @@
 | Structured Output | LLM이 정해진 JSON 형식으로 답하게 하고 자바 객체로 받는 기능 | [2장](./02-chatclient.md) |
 | Synthesizer | Orchestrator의 종합 단계. `ResultSynthesizer`가 작업별 요약을 LLM에 넘겨 추천을 만들고, 실패하면 코드 요약을 씀 | [9장](./09-orchestrator-workers.md) |
 | system 프롬프트 | LLM에게 역할과 규칙을 주는 메시지. 사용자 메시지(user)와 구분됨 | [2장](./02-chatclient.md) |
-| temperature | LLM 출력의 무작위성을 정하는 값. 낮을수록 같은 입력에 비슷한 답 | [1장](./01-llm-and-spring-ai.md) |
+| temperature | LLM 출력의 무작위성을 정하는 값. 낮을수록 같은 입력에 비슷한 답. 권장값은 모델마다 다름(Ollama는 0.0, Gemini 3 계열은 기본값 1.0 권장) | [1장](./01-llm-and-spring-ai.md) |
+| thinking level | Gemini 3 계열이 답하기 전에 하는 추론(thinking)의 깊이. 이 프로젝트는 지연을 줄이려 `thinking-level: minimal` | [1장](./01-llm-and-spring-ai.md) |
 | Tool | LLM이 호출을 요청할 수 있는 자바 메서드. 실행은 Spring AI가 함 | [4장](./04-tool-calling.md) |
 | `@Tool` / `@ToolParam` | 메서드와 파라미터를 Tool로 등록하고 LLM이 읽을 설명을 붙이는 Spring AI 어노테이션 | [4장](./04-tool-calling.md) |
 | Tool Calling | LLM이 "이 Tool을 이 인자로 불러 달라"고 요청하고 애플리케이션이 실행해 결과를 돌려주는 방식 | [4장](./04-tool-calling.md) |
 | Tool Calling Agent | LLM 하나가 Tool 목록을 받아 어떤 Tool을 언제 부를지 정하는 구조. `ToolCallingSearchService` | [8장](./08-tool-calling-agent.md) |
+| `ToolCallResultConverter` | Tool 메서드의 반환값을 LLM에게 넘길 문자열로 바꾸는 Spring AI 인터페이스. 기본은 JSON 변환(`DefaultToolCallResultConverter`), `@Tool(resultConverter = ...)`로 Tool마다 바꿈 | [5장](./05-domain-tools.md) |
 | `ToolResultCapture` | Tool 호출 이름·인자·결과·시간을 `ThreadLocal`에 모으고, `bind()`로 연결한 실행 기록에 Tool 실행 즉시 TOOL 단계를 남기는 도구 | [5장](./05-domain-tools.md) |
 | Trace (실행 기록) | 한 요청이 거친 단계를 CODE·LLM·TOOL·WORKER로 구분해 남긴 기록 | [들어가며](./00-introduction.md) |
 | `TraceStep` | 실행 기록 한 줄. 종류(kind), 실행 주체(actor), 시작 시각, 걸린 시간, 스레드 이름을 가짐 | [7장](./07-coordinator.md) |
@@ -77,9 +83,11 @@
 | 결정성 | 같은 입력에 항상 같은 결과가 나오는 성질. 코드는 결정적, LLM은 비결정적 | [1장](./01-llm-and-spring-ai.md) |
 | 공공데이터 포털 | 정부 기관의 공개 API를 제공하는 사이트. 이 프로젝트는 국내항공운항정보 API를 씀 | [들어가며](./00-introduction.md) |
 | 공항 코드 | 공공데이터 포털이 쓰는 공항 ID(예: 김포 `NAARKSS`, 제주 `NAARKPC`). `AirportCodeAgent`가 이름을 코드로 바꿈 | [5장](./05-domain-tools.md) |
+| 날짜표 | 오늘·내일·모레와 이번 주·다음 주의 요일별 날짜를 적은 표. 프롬프트에 넣어 LLM이 날짜를 계산하지 않고 찾게 함(`DateContext.describe()`) | [2장](./02-chatclient.md) |
 | 단일 책임 원칙 (SRP) | 클래스 하나가 한 가지 이유로만 바뀌게 하는 설계 원칙. 전문 Agent를 나누는 기준 | [6장](./06-specialized-agents.md) |
 | 비결정성 | 같은 입력에도 LLM 출력이 달라질 수 있는 성질 | [1장](./01-llm-and-spring-ai.md) |
 | 서비스 키 | 공공데이터 포털 API를 부를 때 필요한 인증 키. 환경 변수 `DATA_GO_KR_SERVICE_KEY`(필수) | [들어가며](./00-introduction.md) |
+| 입력 토큰 · 출력 토큰 | 입력 토큰은 LLM이 읽는 것(프롬프트, Tool 정의, Tool 결과), 출력 토큰은 LLM이 새로 만드는 것(답변, Tool 호출 요청). CPU에서 도는 작은 모델은 둘 다 지연의 원인 | [1장](./01-llm-and-spring-ai.md) |
 | 작업(job) API | 검색을 백그라운드에서 시작하고(`POST /api/search/{pattern}/jobs`) 상태를 따로 조회하는(`GET /api/search/jobs/{jobId}`) API | [10장](./10-choosing-testing-operating.md) |
 | 재시도 (retry) | LLM 호출 실패 시 다시 시도하는 Spring AI 설정(`spring.ai.retry`). 이 프로젝트는 최대 2회로 줄임 | [1장](./01-llm-and-spring-ai.md) |
 | 전문 Agent | LLM 없이 한 가지 일만 하는 결정적 컴포넌트(`service/agent`). 예: `DateParserAgent`, `AirportCodeAgent` | [6장](./06-specialized-agents.md) |

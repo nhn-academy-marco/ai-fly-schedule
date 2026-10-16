@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 다음 단계를 누가 정하나 | 코드 (순서 고정) | LLM (어떤 Tool을 언제 부를지) | LLM이 나누고 종합, 실행은 코드(Worker) |
 | 한 요청의 LLM 호출 | 0회(정규식 경로) 또는 1회(LLM fallback) | `call()` 최소 1회. 내부에서 Tool 결과를 받아 다시 생성하므로 모델 왕복은 2회 이상 | 계획 1회 + 종합 1회 (종합이 실패하면 코드 요약) |
-| 지연 (실측 감각) | 정규식 경로 약 0.6초, 대부분 공공데이터 포털 API 대기 | 모델 왕복 수에 비례. 원격 3B 모델은 왕복 한 번에 수십 초(실측 약 99초, [8장](./08-tool-calling-agent.md)) | LLM 2회 + 가장 느린 Worker 1개 (Worker는 병렬) |
+| 지연 (데모 사이트 실측) | 정규식 경로 약 0.6초, 대부분 공공데이터 포털 API 대기 | Gemini 2.7초, Ollama 약 24초(개선 전 99.4초, [8장](./08-tool-calling-agent.md)) | Gemini 3.9초, Ollama 31.5초. 계획 + 종합 LLM 2회가 대부분이고 Worker 4개는 병렬로 약 0.1초 |
 | 같은 입력에 같은 결과 | 정규식 경로는 항상 같음 | 모델이 고른 Tool·인자에 따라 달라질 수 있음 | 작업 수와 분해 방식이 달라질 수 있음 |
 | 잘 맞는 요청 | "내일 광주에서 제주"처럼 형태가 정해진 요청 | 필요한 정보가 요청마다 다른 대화형 요청 | "금요일이나 토요일에 김포나 광주에서 제주"처럼 독립된 조합으로 나뉘는 요청 |
 | 약점 | 복합 조건을 처리하지 못함 | Tool을 안 부르거나 엉뚱한 인자를 넣음 | 계획 JSON이 깨지거나 없는 공항을 계획에 넣음 |
@@ -53,6 +53,50 @@ flowchart TD
 - **비용**: LLM 호출 수가 곧 비용입니다. 유료 모델이라면 토큰 요금이, 자체 모델이라면 GPU 시간이 듭니다. Coordinator 패턴의 정규식 경로는 0원입니다.
 - **지연**: 사용자가 기다리는 시간은 모델 왕복 수에 비례합니다. Tool Calling Agent는 Tool을 한 번 더 부를 때마다 왕복이 하나씩 늘어납니다.
 - **결정성**: 같은 입력에 같은 결과가 나와야 하는 기능(예: 요금 계산, 예약)은 결정권을 코드에 둡니다. `temperature: 0.0`으로도 LLM 출력이 완전히 같아지지는 않습니다([1장](./01-llm-and-spring-ai.md)).
+
+### 측정하고 개선하기
+
+패턴을 고른 뒤에도 할 일이 남습니다. 숫자를 재고, 시간이 가장 많이 드는 곳부터 줄이는 일입니다. 이 앱은 실행 기록에 단계별 시작 시각과 길이가 남으므로, 데모 사이트(https://fly.java21.net)의 작업 API 응답만으로 다음 표를 만들 수 있었습니다.
+
+| 패턴 / 모델 | 전체 | 어디에 시간이 쓰였나 |
+|---|---|---|
+| Coordinator (정규식 경로) | 약 0.6초 | 공공데이터 포털 API 대기. LLM 0회 |
+| Tool Calling / Ollama, 개선 전 | 99.4초 | Tool 선택 36.4초, 답변 작성 약 63초 |
+| Tool Calling / Ollama, 개선 후 | 23.5~25.7초 | Tool 선택 약 14.6초, 답변 작성 약 9~11초 |
+| Tool Calling / Gemini 3.5 Flash-Lite | 2.7초 | Tool 선택 1.5초, 답변 작성 약 1.2초 |
+| Orchestrator / Gemini 3.5 Flash-Lite | 3.9초 | 계획 2.5초, Worker 4개 병렬 약 0.1초, 종합 1.3초 |
+| Orchestrator / Ollama | 31.5초 | 계획 22.1초, 종합 9.3초 |
+
+```mermaid
+flowchart LR
+    M["실행 기록으로<br/>구간별 시간 재기"]:::code --> W{"가장 긴 구간은?"}:::code
+    W -- "LLM 입력" --> I["Tool 수 줄이기<br/>Tool 결과 요약"]:::tool
+    W -- "LLM 출력" --> O["답변 짧게<br/>출력 상한, thinking level"]:::llm
+    W -- "LLM 전체" --> C["모델 바꾸기<br/>또는 LLM 호출 없애기"]:::llm
+    W -- "API 대기" --> P["병렬 실행<br/>Worker"]:::worker
+    I --> M
+    O --> M
+    C --> M
+    P --> M
+    classDef code fill:#eef0f3,stroke:#5b6472,color:#1d2129
+    classDef llm fill:#f1ebfd,stroke:#7c4ddb,color:#1d2129
+    classDef tool fill:#fdf0e3,stroke:#d9822b,color:#1d2129
+    classDef worker fill:#e6f6f0,stroke:#1f9d74,color:#1d2129
+```
+
+그림 읽기: 측정에서 시작해 측정으로 돌아오는 고리입니다. 어느 칸을 손볼지는 가장 긴 구간이 정합니다. 이 앱에서는 거의 언제나 보라색 LLM 구간이었고, 공공데이터 포털 대기는 Worker 병렬화로 이미 작았습니다.
+
+CPU에서 돌리는 작은 모델은 **입력 토큰을 읽는 데도, 출력 토큰을 만드는 데도** 시간이 듭니다. 그래서 손잡이는 넘기는 Tool 수(7개 → 3개), Tool 결과 크기(`CompactFlightResultConverter`), 답변 길이(2~3문장), 출력 상한(`max-tokens: 512`), 추론 단계(`thinking-level: minimal`), 그리고 모델 선택입니다. 하나하나의 근거와 개선 전후 비교는 [8장](./08-tool-calling-agent.md)의 "측정하고 개선하기"에 있습니다. 개선 뒤에도 Ollama는 20~30초가 걸립니다. 이런 긴 호출을 화면에서 쓸 수 있게 하는 것이 10.3의 작업 API입니다.
+
+측정은 속도만 재지 않습니다. 운영 기록을 읽다 보면 **틀린 결과**도 보입니다. 데모 사이트에서 작은 모델은 날짜표를 받고도 "이번 주 토요일"을 하루 늦게 골랐고, Orchestrator의 계획에는 사용자가 말하지 않은 "10:00 이전 · 1,000원 이상"을 붙였으며, 4개여야 할 작업을 2개만 만들었습니다. 대응은 한 문장으로 요약됩니다. **코드가 확실히 할 수 있는 일은 LLM에게 맡기지 않는다.**
+
+| 운영에서 본 실수 | 코드로 옮긴 일 | 다룬 곳 |
+|---|---|---|
+| "이번 주 토요일"을 10-18로(정답 10-17) | `DateContext.annotate()`가 문장에 날짜를 붙여 보냄. 요일 표현은 Coordinator에서 LLM 없이 정규식으로 처리 | [2장](./02-chatclient.md), [7장](./07-coordinator.md) |
+| 말하지 않은 시간·가격 조건을 지어냄 | `removeInventedConditions()`가 문장에 시간·가격 표현이 없으면 조건을 지움 | [9장](./09-orchestrator-workers.md) |
+| 4개여야 할 작업을 2개만 만듦 | 코드로 채울 수 없음. 더 큰 모델을 쓰거나, 그 요청은 코드로 처리하는 패턴을 고름 | [9장](./09-orchestrator-workers.md) |
+
+마지막 줄이 중요합니다. 코드가 고칠 수 있는 실수는 코드로 고치고, 고칠 수 없는 실수가 남는다면 그 결정을 LLM에게 맡긴 것 자체를 다시 생각합니다. 위의 "가장 단순한 것부터" 그림으로 돌아가는 셈입니다.
 
 > **생각해 보기**
 > 실제 서비스라면 세 패턴 중 하나만 고를 필요가 없습니다. 이 프로젝트의 Orchestrator-Workers 패턴은 Worker 안에서 Coordinator 패턴의 검색 단계를 그대로 재사용합니다([9장](./09-orchestrator-workers.md)). "정규식으로 처리되면 Coordinator, 안 되면 Orchestrator"처럼 앞단에서 요청을 나누는 라우터를 둔다면 어떤 장단점이 생길까요?
@@ -97,7 +141,7 @@ flowchart TD
     @DisplayName("정규식이 실패하면 LLM의 Structured Output을 사용한다")
     void usesLlmWhenRegexFails() {
         SearchCriteria fromLlm = new SearchCriteria("김포", "제주", "2026-03-27", null, null, null, null);
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(SearchCriteria.class))
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchCriteria>>any()))
                 .thenReturn(fromLlm);
 
         SearchCriteriaExtractor.Extraction extraction =
@@ -110,7 +154,7 @@ flowchart TD
 
 코드 읽기
 
-- `when(chatClient.prompt()...entity(SearchCriteria.class))`는 "LLM이 이 JSON을 돌려줬다고 치자"는 뜻입니다. LLM의 판단은 가짜로 고정하고, 그 결과를 받아 쓰는 코드만 검증합니다.
+- `when(chatClient.prompt()...entity(...))`는 "LLM이 이 JSON을 돌려줬다고 치자"는 뜻입니다. `entity`에는 클래스 대신 변환기(`BeanOutputConverter` + `LenientJsonCleaner`, [2장](./02-chatclient.md))가 넘어가므로, 변환기 타입을 밝힌 `any()`로 받습니다. LLM의 판단은 가짜로 고정하고, 그 결과를 받아 쓰는 코드만 검증합니다.
 - `verifyNoInteractions(chatClient)`는 **LLM을 부르지 않았다**는 사실을 검증합니다. 비용과 결정성에 관한 약속([7장](./07-coordinator.md)의 정규식 우선)을 테스트로 고정한 것입니다.
 - 같은 파일의 `llmWithoutRoute()`는 LLM이 출발지를 비워 돌려준 경우를 흉내 냅니다. LLM의 잘못된 출력도 이렇게 재현할 수 있습니다.
 
@@ -432,6 +476,9 @@ flowchart TD
 > **주의**
 > 빌드 단계는 `-DskipTests`로 테스트를 건너뜁니다. push하기 전에 로컬에서 `./mvnw test`를 실행하세요.
 
+> **팁**
+> push가 안 되면 배포도 시작되지 않습니다. 이 프로젝트에서 겪은 두 가지입니다. 일부 네트워크는 SSH 기본 포트 22를 막아 `git push`가 `port 22: Operation timed out`으로 멈춥니다. 이때는 `~/.ssh/config`에 `Host github.com` / `Hostname ssh.github.com` / `Port 443`을 적어 443 포트로 SSH를 씁니다. HTTPS와 Personal Access Token으로 push한다면, `.github/workflows/maven.yml`을 바꾼 커밋은 토큰에 `workflow` 권한이 있어야 push됩니다. 자세한 증상은 [부록 B](./appendix-b-troubleshooting.md)에 있습니다.
+
 ### 비밀 값은 어디에 두나
 
 API 키는 코드와 `application.yml`에 적지 않습니다. `application.yml`은 환경 변수를 읽기만 합니다(`service-key: ${DATA_GO_KR_SERVICE_KEY:}`, `api-key: ${GOOGLE_GENAI_API_KEY:not-set}`). 배포 환경에서는 값을 두 곳에 나눠 둡니다.
@@ -440,15 +487,16 @@ API 키는 코드와 `application.yml`에 적지 않습니다. `application.yml`
 |---|---|---|
 | GitHub Secrets (Settings > Secrets and variables > Actions) | `SSH_IP`, `SSH_ID`, `SSH_PASSWORD`, `SSH_PORT` | 배포 서버 접속 |
 | GitHub Secrets | `DATA_GO_KR_SERVICE_KEY` | workflow가 `envs`로 원격 셸에 넘기고, `startup.sh`가 실행하는 java 프로세스가 물려받음 |
+| GitHub Secrets (선택) | `GOOGLE_GENAI_API_KEY` | `DATA_GO_KR_SERVICE_KEY`와 함께 `envs`로 넘김. Secret이 없으면 빈 값으로 넘어오고 `startup.sh`가 지움 |
 | 서버의 `~/fly-schedule/.env` | `GOOGLE_GENAI_API_KEY=...` (선택) | `startup.sh`가 파일이 있으면 읽어 환경 변수로 내보냄 |
 
-Gemini 키가 없어도 앱은 정상으로 기동합니다. 화면에서 Gemini를 고르면 `ChatClientProvider`가 "Gemini API 키가 설정되지 않았습니다..."라고 안내합니다([1장](./01-llm-and-spring-ai.md)). `.env`는 `.gitignore`에 들어 있습니다.
+Gemini 키가 없어도 앱은 정상으로 기동합니다. 다만 **빈 값**은 "없음"과 다릅니다. workflow는 Secret `GOOGLE_GENAI_API_KEY`가 없어도 이 변수를 빈 문자열로 넘기는데, 빈 문자열이 설정되면 `application.yml`의 기본값 `not-set` 대신 `""`가 쓰여 Gemini 설정 오류로 기동에 실패합니다. 그래서 `startup.sh`는 값이 비어 있으면 변수를 `unset`하고 `[startup] Gemini API 키: 없음 (Ollama만 사용)`을 남깁니다. 화면에서 Gemini를 고르면 `ChatClientProvider`가 "Gemini API 키가 설정되지 않았습니다..."라고 안내합니다([1장](./01-llm-and-spring-ai.md)). `.env`는 `.gitignore`에 들어 있습니다.
 
 ### startup.sh가 하는 일
 
 `deploy/startup.sh`는 배포마다 서버로 복사되어 실행됩니다. 순서는 다음과 같습니다.
 
-1. jar(`~/fly-schedule/target/fly.jar`, 없으면 `~/fly-schedule/fly.jar`)를 찾고, `.env`가 있으면 읽습니다. `DATA_GO_KR_SERVICE_KEY`가 없으면 멈춥니다.
+1. jar(`~/fly-schedule/target/fly.jar`, 없으면 `~/fly-schedule/fly.jar`)를 찾고, `.env`가 있으면 읽습니다. `DATA_GO_KR_SERVICE_KEY`가 없으면 멈춥니다. `GOOGLE_GENAI_API_KEY`는 값이 있으면 내보내고, 비어 있으면 `unset`합니다.
 2. 포트를 정합니다(아래 그림).
 3. Java를 고릅니다. `JAVA_BIN` → `/usr/local/java/java21/bin/java` → `$JAVA_HOME/bin/java` → `PATH`의 `java` 순서입니다. 비대화식 SSH에서는 `PATH`의 `java`가 21이 아닐 수 있기 때문입니다.
 4. 실행 중인 앱을 종료합니다. `app.pid`의 프로세스, `fly.jar`를 실행 중인 java 프로세스, 같은 포트를 잡고 있는 프로세스에 종료 신호를 보내고 30초 안에 끝나지 않으면 강제 종료합니다.
@@ -555,6 +603,7 @@ Worker를 별도 서비스로 떼어 내면 Worker만 따로 늘리거나 다른
 ## 정리
 
 - 결정권이 코드에서 LLM으로 옮겨 갈수록 할 수 있는 일은 늘지만 LLM 호출 수, 지연, 결과의 흔들림도 함께 늘어납니다. 가장 단순한 패턴에서 시작합니다.
+- 실행 기록으로 구간별 시간을 재고 가장 긴 구간부터 줄입니다. 운영에서 본 LLM의 실수 가운데 코드가 확실히 할 수 있는 일(날짜 계산, 문장에 조건이 있었는지 확인)은 코드로 옮깁니다.
 - 가짜 LLM 테스트는 "LLM의 결정"과 "외부 API"만 가짜로 두고 그 사이의 코드를 진짜로 검증합니다. `RETURNS_DEEP_STUBS`, `RETURNS_SELF` + `thenAnswer`, 지연을 넣은 가짜, `MockRestServiceServer`, Awaitility를 상황에 맞게 씁니다.
 - 프롬프트의 품질은 가짜 LLM으로 검증할 수 없습니다. 진짜 모델로 화면에서 확인합니다.
 - 오래 걸리는 LLM 요청은 작업 API(`202` + 상태 조회)로 나누면 프록시 타임아웃(nginx 기본 60초)에 걸리지 않습니다.

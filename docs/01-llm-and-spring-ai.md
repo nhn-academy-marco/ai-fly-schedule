@@ -29,14 +29,16 @@ flowchart LR
 
 | 개념 | 뜻 | 이 프로젝트에서 |
 |------|-----|-----------------|
-| 토큰 | LLM이 처리하는 최소 단위. 비용과 길이의 기준 | 출력 상한을 Ollama는 `max-tokens: 1024`, Gemini는 `max-output-tokens: 1024`로 둔다 |
-| 컨텍스트 윈도우 | 한 번에 다룰 수 있는 입력과 출력 토큰의 최대 길이 | Ollama `num-ctx: 4096`. Tool 7개의 설명과 Tool 결과가 함께 들어가야 한다 |
-| temperature | 다음 토큰을 고를 때의 무작위성. 낮을수록 확률이 가장 높은 토큰을 고른다 | 두 모델 모두 `0.0` |
+| 토큰 | LLM이 처리하는 최소 단위. 비용과 길이의 기준 | 출력 상한을 Ollama는 `max-tokens: 512`, Gemini는 `max-output-tokens: 1024`로 둔다 |
+| 컨텍스트 윈도우 | 한 번에 다룰 수 있는 입력과 출력 토큰의 최대 길이 | Ollama `num-ctx: 4096`. Tool 설명과 Tool 결과가 함께 들어가야 한다 |
+| temperature | 다음 토큰을 고를 때의 무작위성. 낮을수록 확률이 가장 높은 토큰을 고른다 | Ollama는 `0.0`, Gemini는 지정하지 않고 기본값(1.0)을 쓴다 |
 | 비결정성 | 같은 입력에도 다른 출력이 나올 수 있는 성질 | temperature가 0이어도 완전히 없어지지는 않는다 |
 
 **컨텍스트 윈도우**는 LLM의 작업 기억입니다. 시스템 지시, 사용자 문장, Tool 설명, Tool 결과, 그리고 LLM이 만드는 답까지 모두 이 안에 들어가야 합니다. 넘치면 앞부분이 잘리거나 오류가 납니다. [5장](05-domain-tools.md)에서 Tool 결과의 크기를 제한하는 이유가 여기에 있습니다.
 
 **temperature**를 0으로 두면 LLM은 매번 가장 확률이 높은 토큰을 고르려 합니다. 그래도 같은 입력에 늘 같은 출력이 나온다는 보장은 없습니다. 서버의 계산 순서, 모델 버전, 하드웨어에 따라 확률이 미세하게 달라질 수 있습니다. 이 책에서는 "temperature 0은 비슷한 출력을 낼 가능성을 높일 뿐, 결과를 보장하지 않는다"고 기억하면 충분합니다.
+
+토큰은 **입력 토큰**과 **출력 토큰**으로 나누어 봅니다. 입력 토큰은 LLM이 읽는 것(system 프롬프트, 사용자 문장, Tool 설명, Tool 결과)이고, 출력 토큰은 LLM이 새로 만드는 것(답변, Tool 호출 요청, JSON)입니다. 클라우드 LLM은 둘 다 빠르게 처리하지만, CPU에서 돌리는 작은 모델은 입력을 읽는 데도, 출력을 한 토큰씩 만드는 데도 시간이 듭니다. 응답이 느릴 때 어느 쪽을 줄일지는 [8장](08-tool-calling-agent.md)에서 실측 숫자로 따져 봅니다.
 
 LLM이 **모르는 것**도 분명히 해 둡니다.
 
@@ -57,7 +59,7 @@ flowchart LR
     CC --> M1["OllamaChatModel"]:::code
     CC --> M2["GoogleGenAiChatModel"]:::code
     M1 --> L1["Ollama 서버<br/>qwen2.5 3B"]:::llm
-    M2 --> L2["Gemini API<br/>gemini-2.5-flash"]:::llm
+    M2 --> L2["Gemini API<br/>gemini-3.5-flash-lite"]:::llm
     classDef code fill:#eef0f3,stroke:#5b6472,color:#1d2129
     classDef llm fill:#f1ebfd,stroke:#7c4ddb,color:#1d2129
     classDef tool fill:#fdf0e3,stroke:#d9822b,color:#1d2129
@@ -160,10 +162,11 @@ spring.ai.ollama:
     options:
       model: qwen2.5:3b-instruct-q4_K_M
       temperature: 0.0
-      max-tokens: 1024
-      num-thread: 4
-      # Tool 7개의 설명과 Tool 결과가 들어가도록 컨텍스트를 늘린다
+      # CPU에서는 출력 토큰 하나하나가 느리다. 답변·계획(JSON)이 들어갈 만큼만 허용한다
+      max-tokens: 512
+      # Tool 설명과 Tool 결과가 들어가도록 컨텍스트를 늘린다
       num-ctx: 4096
+      # num-thread는 지정하지 않는다. Ollama가 서버의 CPU 코어 수에 맞춰 정한다
       top-p: 0.9
       top-k: 40
       keep-alive: 10m
@@ -176,8 +179,9 @@ spring.ai.ollama:
 | `base-url` | 실습용 원격 Ollama 서버입니다. 내 컴퓨터에서 Ollama를 실행한다면 `http://localhost:11434`로 바꿉니다 |
 | `model` | Qwen 2.5, 30억(3B) 파라미터, 지시 따르기 학습(instruct), 4비트 양자화(q4_K_M)로 메모리를 줄인 모델입니다 |
 | `temperature` | 0.0. 검색 조건 추출이나 Tool 선택은 창의성보다 일관성이 중요합니다 |
-| `max-tokens` | 출력 토큰 상한입니다. 넘으면 답이 중간에 잘립니다 |
+| `max-tokens` | 출력 토큰 상한 512입니다. CPU에서는 출력 토큰 하나하나에 시간이 들어, 상한이 곧 최악의 응답 시간을 정합니다. 2~3문장 답변과 검색 계획(JSON)이 들어갈 만큼만 둡니다. 넘으면 답이 중간에 잘립니다 |
 | `num-ctx` | 컨텍스트 윈도우입니다. Ollama의 기본값으로는 Tool 설명과 결과가 다 들어가지 않아 늘렸습니다 |
+| (`num-thread` 없음) | 계산에 쓸 CPU 스레드 수입니다. 고정값(예: 4)을 적으면 코어가 더 많은 서버에서도 그만큼만 씁니다. 적지 않으면 Ollama가 서버 코어 수에 맞춰 정합니다 |
 | `top-p`, `top-k` | 다음 토큰 후보를 누적 확률 0.9 안, 상위 40개 안으로 제한합니다 |
 | `keep-alive` | 마지막 요청 뒤 모델을 메모리에 올려 두는 시간입니다. 첫 요청이 느린 이유는 모델을 메모리에 올리는 시간 때문입니다 |
 
@@ -195,12 +199,15 @@ spring.ai.google:
     api-key: ${GOOGLE_GENAI_API_KEY:not-set}
     chat:
       options:
-        model: gemini-2.5-flash
-        temperature: 0.0
+        # 무료 등급에서 쓸 수 있는 3.5 계열의 가장 빠른 모델. Function Calling과 Structured Output을 지원한다
+        # (2.5 계열은 새 프로젝트에서 쓸 수 없을 수 있다 - Google은 새 프로젝트에 3.5 Flash-Lite를 권장)
+        model: gemini-3.5-flash-lite
+        # 응답 속도 우선: Tool 선택·짧은 요약에는 긴 추론이 필요 없다
+        thinking-level: minimal
+        # temperature는 지정하지 않는다. Google은 Gemini 3 계열에서 기본값 1.0을 강하게 권장한다
+        # (1.0 미만이면 반복 출력 같은 예상치 못한 동작이 생길 수 있음). 결과 검증은 코드가 맡는다
         # 계획(JSON)과 추천 답변이 잘리지 않도록 넉넉하게 둔다
         max-output-tokens: 1024
-        top-p: 0.9
-        top-k: 40
 ```
 
 **코드 읽기**
@@ -209,11 +216,21 @@ spring.ai.google:
 - 키가 비어 있으면 Gemini 자동 설정이 `ChatModel`을 만들지 못해 애플리케이션 전체가 시작되지 않을 수 있습니다. `not-set`이라는 자리표시 값을 넣어 두면 키 없이도 Ollama만으로 실습할 수 있습니다. 이 값을 보고 Gemini 선택을 막는 코드는 2장의 `ChatClientProvider`입니다.
 - 출력 상한의 이름이 Ollama(`max-tokens`)와 Gemini(`max-output-tokens`)에서 다릅니다. 제공자별 옵션 이름은 제공자 문서를 따릅니다.
 
-| 항목 | Ollama (qwen2.5 3B) | Gemini (2.5 Flash) |
+**왜 `gemini-3.5-flash-lite`인가.** 기준은 네 가지입니다. 무료 등급으로 쓸 수 있을 것, 미리보기가 아닌 안정(stable) 모델일 것, 이 책의 두 기능인 Function Calling(Tool Calling)과 Structured Output을 지원할 것, 그리고 빠를 것. Google은 새 프로젝트에 3.5 Flash-Lite나 3.8 Flash를 권장하고, 2.5 계열은 새 프로젝트에서 쓸 수 없을 수 있다고 안내합니다. 그래서 예전에 쓰던 `gemini-2.5-flash` 대신 3.5 계열에서 가장 가벼운 모델을 골랐습니다. 모델 이름과 지원 기능은 자주 바뀌므로, 실습 전에 Google AI Studio의 모델 목록에서 다시 확인합니다.
+
+**`thinking-level: minimal`.** Gemini 3 계열은 답하기 전에 속으로 추론하는 단계(thinking)를 거칩니다. 추론이 길수록 복잡한 문제를 잘 풀지만 그만큼 늦어집니다. Tool 하나를 고르거나 2~3문장으로 요약하는 일에는 긴 추론이 필요 없으므로 가장 낮은 단계로 두어 지연을 줄입니다.
+
+**temperature를 적지 않은 이유.** Ollama는 `0.0`으로 두었지만 Gemini에는 temperature를 아예 적지 않았습니다. Google은 Gemini 3 계열에 대해 temperature를 기본값 1.0으로 둘 것을 강하게 권장합니다("strongly recommend keeping the temperature parameter at its default value of 1.0"). 1.0보다 낮추면 같은 말을 되풀이하는 반복(looping)이나 성능 저하가 생길 수 있다고 합니다. 모델마다 권장값이 다르므로 "일관성을 원하면 temperature 0"을 모든 모델에 그대로 적용하면 안 됩니다. 이 프로젝트는 출력의 일관성을 temperature에 기대지 않고, LLM이 돌려준 값을 코드가 검증하는 쪽으로 지킵니다([9장](09-orchestrator-workers.md)의 `validate`).
+
+> **주의**
+> Gemini API의 무료 등급에서 보낸 프롬프트와 응답은 Google이 제품 개선에 쓸 수 있습니다. 개인정보나 회사 기밀 같은 민감한 데이터는 보내지 않습니다. 이 책의 실습 데이터(공개된 항공편 정보)는 문제가 없습니다.
+
+| 항목 | Ollama (qwen2.5 3B) | Gemini (3.5 Flash-Lite) |
 |------|---------------------|--------------------|
 | 실행 위치 | 내 컴퓨터 또는 실습 서버 | Google 클라우드 |
 | 비용 | 무료 | 무료 사용량을 넘으면 유료 |
-| 응답 속도 | 서버 사양에 따라 수 초에서 수십 초 | 대개 수 초 |
+| 응답 속도 | CPU 서버 기준 호출 한 번에 수 초에서 수십 초 | 대개 1~2초 |
+| temperature | `0.0` | 지정하지 않음(기본값 1.0) |
 | 판단 능력 | 약함. Tool을 건너뛰거나 인자를 틀리거나 JSON이 깨지기도 함 | 안정적 |
 | 이 책에서의 쓰임 | 기본 실습 | 세 패턴 비교, 복잡한 요청 |
 
@@ -319,6 +336,7 @@ IntelliJ IDEA에서 실행한다면 Run > Edit Configurations의 Environment var
 ## 핵심 정리
 
 - LLM은 다음 토큰을 확률로 예측해 글을 만듭니다. temperature 0은 일관성을 높이지만 같은 결과를 보장하지 않습니다.
+- 모델마다 권장 옵션이 다릅니다. Ollama는 temperature 0과 출력 상한 512, Gemini 3.5 Flash-Lite는 temperature 기본값과 `thinking-level: minimal`을 씁니다.
 - LLM은 오늘 날짜도, 실시간 운항 정보도 모르고, 모르는 것을 그럴듯하게 지어내기도 합니다.
 - Spring AI에서 서비스 코드는 `ChatClient`만 보고, 제공자별 통신은 스타터가 자동으로 만든 `ChatModel`이 맡습니다.
 - `application.yml`에 모델과 옵션을 적고, 재시도를 줄이고 읽기 타임아웃을 늘려 느린 LLM에 대비했습니다.

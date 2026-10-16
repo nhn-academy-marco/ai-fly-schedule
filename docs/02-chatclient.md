@@ -177,6 +177,8 @@ public record SearchCriteria(
 
 ```java
     public Extraction extract(String message, Supplier<ChatClient> chatClient) {
+        // "이번 주 토요일" 같은 표현에 코드가 계산한 날짜를 먼저 붙인다 → 정규식도 LLM도 계산할 필요가 없다
+        message = DateContext.annotate(message);
         Optional<SearchCriteria> parsed = parseWithRegex(message);
         if (parsed.isPresent()) {
             log.info("정규식으로 검색 조건 추출: {}", parsed.get());
@@ -187,13 +189,16 @@ public record SearchCriteria(
         SearchCriteria criteria = chatClient.get().prompt()
                 .system("""
                         항공편 검색 문장에서 검색 조건을 추출합니다.
-                        오늘 날짜는 %s입니다. "내일", "다음 주 금요일" 같은 표현은 이 날짜를 기준으로 YYYY-MM-DD로 바꿉니다.
+                        "내일", "다음 주 금요일" 같은 표현은 계산하지 말고 아래 날짜표에서 찾아 YYYY-MM-DD로 적습니다.
                         공항은 공항 코드가 아니라 한글 이름(광주, 김포, 제주 등)으로 적습니다.
                         문장에 없는 조건은 null로 둡니다.
-                        """.formatted(LocalDate.now()))
+
+                        %s
+                        """.formatted(DateContext.describe()))
                 .user(message)
                 .call()
-                .entity(SearchCriteria.class);
+                // 작은 모델이 JSON 앞뒤에 문장을 붙여도 JSON 부분만 읽는다
+                .entity(new BeanOutputConverter<>(SearchCriteria.class, null, new LenientJsonCleaner()));
 
         if (criteria == null || !criteria.hasRoute()) {
             throw new IllegalArgumentException("출발 공항과 도착 공항을 찾지 못했습니다. 예: \"내일 광주에서 제주\"");
@@ -204,7 +209,8 @@ public record SearchCriteria(
 
 **코드 읽기**
 
-- `.entity(SearchCriteria.class)`가 Structured Output입니다. Spring AI는 `SearchCriteria`에서 JSON 스키마를 만들어 "이 스키마에 맞는 JSON으로 답하라"는 지시를 프롬프트에 덧붙이고, LLM이 돌려준 JSON을 `SearchCriteria` 객체로 바꿉니다.
+- `.entity(...)`가 Structured Output입니다. Spring AI는 `SearchCriteria`에서 JSON 스키마를 만들어 "이 스키마에 맞는 JSON으로 답하라"는 지시를 프롬프트에 덧붙이고, LLM이 돌려준 JSON을 `SearchCriteria` 객체로 바꿉니다. 가장 간단한 형태는 `.entity(SearchCriteria.class)`입니다. 이 프로젝트는 같은 일을 하는 변환기(`BeanOutputConverter`)를 직접 만들어 넘기는데, 그 이유는 바로 아래 "JSON이 문장에 섞여 올 때"에서 봅니다.
+- 메서드의 첫 줄 `DateContext.annotate(message)`는 "이번 주 토요일" 같은 표현 옆에 코드가 계산한 날짜를 붙입니다(`이번 주 토요일(2026-10-17)`). 프롬프트 끝의 `%s`에는 `DateContext.describe()`가 만든 **날짜표**가 들어갑니다. 날짜를 왜 이렇게 두 겹으로 주는지는 2.5절에서 봅니다.
 - `@JsonPropertyDescription`의 문장은 그 JSON 스키마의 `description`이 되어 LLM에게 전달됩니다. 필드 이름 `date`만으로는 형식을 알 수 없지만 "YYYY-MM-DD 형식"이라는 설명이 있으면 LLM이 형식을 맞춥니다. 필드 설명은 사람을 위한 주석이 아니라 **LLM을 위한 프롬프트**입니다.
 - LLM의 결과를 그대로 쓰지 않고 `hasRoute()`로 다시 검사합니다. 작은 모델은 공항을 비워 두거나 영어로 적기도 합니다. 검사에 실패하면 사용자가 이해할 수 있는 예외를 던집니다.
 - 메서드는 정규식을 먼저 시도하고, 실패했을 때만 LLM을 부릅니다. 결과에는 LLM을 썼는지(`usedLlm`)를 함께 담아, [7장](07-coordinator.md)의 Coordinator가 실행 기록에 `CODE` 또는 `LLM`으로 남깁니다.
@@ -217,6 +223,7 @@ sequenceDiagram
     participant P as ChatClientProvider(코드)
     participant L as LLM
     C->>X: extract(message, Supplier)
+    X->>X: DateContext.annotate(message)
     X->>X: parseWithRegex(message)
     alt 정규식으로 공항 두 개를 찾음
         X-->>C: Extraction(criteria, usedLlm=false)
@@ -237,6 +244,71 @@ sequenceDiagram
 > **주의**
 > `.entity()`는 LLM이 스키마에 맞는 JSON을 돌려줄 때만 성공합니다. 작은 모델은 JSON 앞뒤에 설명 문장을 붙이거나, 괄호를 닫지 않거나, 숫자 자리에 "6만원" 같은 문자열을 넣기도 합니다. 이때는 변환 단계에서 예외가 나고, Coordinator가 이를 `success: false` 응답으로 바꿉니다. LLM의 출력은 형식이 맞더라도 내용까지 맞다는 보장이 없으므로 **항상 코드로 검증**합니다. 이 원칙은 [9장](09-orchestrator-workers.md)의 `FlightSearchPlanner.validate()`에서 더 엄격한 형태로 다시 나옵니다.
 
+### JSON이 문장에 섞여 올 때: LenientJsonCleaner
+
+`.entity()`는 LLM의 응답 문자열을 JSON으로 읽기 전에 **정리기**(`ResponseTextCleaner`)를 한 번 거칩니다. Spring AI의 기본 정리기는 응답 **전체가** ` ``` `로 시작하고 ` ``` `로 끝날 때만 코드 블록 표시를 벗깁니다. Gemini처럼 JSON만 깔끔하게 돌려주는 모델에는 이것으로 충분합니다.
+
+그런데 운영 중인 데모 사이트에서 Ollama `qwen2.5:3b`가 이런 응답을 돌려주었습니다(모양만 옮김).
+
+````text
+다음은 검색 계획입니다:
+```json
+{"reasoning": "2 × 2", "tasks": [ ... ]}
+```
+각 작업을 실행하세요.
+````
+
+JSON 자체는 멀쩡하지만 앞뒤에 문장이 붙어 있어 응답이 ` ``` `로 시작하지도 끝나지도 않습니다. 기본 정리기는 아무것도 벗기지 않고, 변환기는 "다음은..."부터 JSON으로 읽으려다 실패합니다. 실제로 이 때문에 Orchestrator의 계획 단계([9장](09-orchestrator-workers.md))가 실패했습니다. 그래서 JSON 부분만 꺼내는 정리기를 따로 만들었습니다.
+
+파일: `src/main/java/net/java21/flyschedule/service/ai/LenientJsonCleaner.java`
+
+```java
+public class LenientJsonCleaner implements ResponseTextCleaner {
+
+    @Override
+    public String clean(String text) {
+        if (text == null) {
+            return null;
+        }
+        String trimmed = text.trim();
+
+        int fence = trimmed.indexOf("```");
+        if (fence >= 0) {
+            int bodyStart = trimmed.indexOf('\n', fence);
+            int closing = bodyStart < 0 ? -1 : trimmed.indexOf("```", bodyStart);
+            if (closing > bodyStart) {
+                return trimmed.substring(bodyStart + 1, closing).trim();
+            }
+        }
+
+        int open = trimmed.indexOf('{');
+        int close = trimmed.lastIndexOf('}');
+        if (open >= 0 && close > open) {
+            return trimmed.substring(open, close + 1);
+        }
+        return trimmed;
+    }
+}
+```
+
+**코드 읽기**
+
+- 응답 안 어디든 코드 블록이 있으면 첫 번째 블록의 내용을 꺼냅니다. ` ```json ` 줄의 끝(첫 줄바꿈) 다음부터 닫는 ` ``` ` 앞까지입니다.
+- 코드 블록이 없으면 처음 나온 `{`부터 마지막 `}`까지를 꺼냅니다. "결과: {...} 입니다" 같은 응답을 위한 것입니다.
+- 둘 다 없으면 앞뒤 공백만 지우고 그대로 넘깁니다. 이때는 변환이 실패하고, 실패는 지금까지처럼 `success: false`로 이어집니다. 정리기는 형식을 고칠 뿐 **내용을 지어내지 않습니다**.
+
+이 정리기는 `BeanOutputConverter`의 세 번째 생성자 인자로 연결합니다. 두 번째 인자(`null`)는 Jackson `ObjectMapper`로, `null`이면 기본값을 씁니다. `SearchCriteriaExtractor`와 [9장](09-orchestrator-workers.md)의 `FlightSearchPlanner`가 같은 방식으로 씁니다.
+
+```java
+.entity(new BeanOutputConverter<>(SearchPlan.class, null, new LenientJsonCleaner()));
+```
+
+> **직접 확인하기**
+> ```bash
+> ./mvnw test -Dtest=LenientJsonCleanerTest
+> ```
+> 기대 결과: `Failures: 0, Errors: 0`. `defaultCleanerFails`는 기본 변환기(`new BeanOutputConverter<>(SearchCriteria.class)`)가 같은 모양의 응답에서 예외를 던지는 것을, `worksWithBeanOutputConverter`는 정리기를 연결하면 `SearchPlan`으로 변환되는 것을 보여 줍니다.
+
 ## 2.5 프롬프트 설계 기초
 
 `extract()`의 시스템 프롬프트는 네 줄뿐이지만, 줄마다 이유가 있습니다.
@@ -244,17 +316,81 @@ sequenceDiagram
 | 프롬프트의 줄 | 왜 필요한가 |
 |---------------|-------------|
 | 항공편 검색 문장에서 검색 조건을 추출합니다 | 할 일을 한 문장으로 못 박는다. 답변을 쓰거나 항공편을 추천하지 않게 한다 |
-| 오늘 날짜는 %s입니다... 이 날짜를 기준으로 YYYY-MM-DD로 바꿉니다 | LLM은 오늘 날짜를 모른다(1장). 날짜를 주지 않으면 "내일"을 학습 시점 기준으로 엉뚱하게 계산한다 |
+| "내일", "다음 주 금요일" 같은 표현은 계산하지 말고 아래 날짜표에서 찾아... | LLM은 오늘 날짜를 모른다(1장). 날짜를 주지 않으면 "내일"을 학습 시점 기준으로 엉뚱하게 계산한다. 날짜를 줘도 작은 모델은 요일 계산을 틀리므로 표를 준다 |
 | 공항은 공항 코드가 아니라 한글 이름으로 적습니다 | 코드 변환은 결정적인 코드(`AirportCodeAgent`, [6장](06-specialized-agents.md))가 맡는다. LLM이 코드를 지어내면 틀려도 알아채기 어렵다 |
 | 문장에 없는 조건은 null로 둡니다 | 빈칸을 그럴듯한 값으로 채우지 못하게 한다. 사용자가 말하지 않은 "10시 이후"를 만들어 내면 결과가 조용히 줄어든다 |
+| `%s` 자리의 날짜표 | 오늘·내일·모레, 이번 주와 다음 주의 요일별 날짜를 표로 준다. 아래에서 자세히 본다 |
 
-여기서 세 가지 원칙을 뽑을 수 있습니다.
+여기서 다섯 가지 원칙을 뽑을 수 있습니다. 마지막 원칙은 이 프롬프트를 운영하면서 얻었습니다.
 
-첫째, **LLM이 모르는 사실은 프롬프트로 준다.** 오늘 날짜가 대표적입니다. `LocalDate.now()`를 요청마다 넣으므로 날짜가 바뀌어도 코드를 고칠 필요가 없습니다.
+첫째, **LLM이 모르는 사실은 프롬프트로 준다.** 오늘 날짜가 대표적입니다. 날짜표는 요청마다 `LocalDate.now()`로 새로 만들므로 날짜가 바뀌어도 코드를 고칠 필요가 없습니다.
 
 둘째, **규칙은 짧은 목록으로 준다.** 긴 문단보다 한 줄에 규칙 하나를 적은 목록이 작은 모델에서도 잘 지켜집니다. 규칙이 서로 섞이지 않고, 나중에 어떤 규칙이 지켜지지 않았는지 짚기도 쉽습니다.
 
 셋째, **근거가 없는 내용은 만들지 못하게 한다.** 이것을 근거 제한(grounding)이라고 합니다. "문장에 없는 조건은 null"이 이 장의 근거 제한입니다. [8장](08-tool-calling-agent.md)의 Tool Calling Agent는 시스템 프롬프트에 "Tool 결과에 없는 내용은 지어내지 마세요"라는 규칙을 넣어, 답변이 실제 검색 결과에만 기대게 합니다.
+
+넷째, **계산은 시키지 말고 찾게 한다.** 처음에는 프롬프트에 "오늘 날짜는 2026-10-16(금)입니다" 한 줄만 넣었습니다. 그런데 오늘이 2026-10-16 금요일인 날, 데모 사이트에서 "이번 주 금요일이나 토요일"을 검색하자 Gemini는 10-16과 10-17로 바르게 계산했고 `qwen2.5:3b`는 10-17과 10-18로 하루씩 밀려 계산했습니다. 작은 모델에게 "오늘이 금요일이면 이번 주 금요일은 며칠인가"는 생각보다 어려운 문제입니다. 그래서 계산을 시키는 대신 **날짜표**를 줍니다. LLM은 표에서 "금"과 "토"를 찾아 옮겨 적기만 하면 됩니다.
+
+파일: `src/main/java/net/java21/flyschedule/service/ai/DateContext.java`
+
+```java
+    public static String describe(LocalDate today) {
+        LocalDate monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        return """
+                오늘: %s
+                내일: %s, 모레: %s
+                이번 주: %s
+                다음 주: %s""".formatted(
+                withDay(today), withDay(today.plusDays(1)), withDay(today.plusDays(2)),
+                week(monday), week(monday.plusWeeks(1)));
+    }
+```
+
+`2026-10-16`에 만든 날짜표는 다음과 같습니다(`DateContextTest.fridayIsToday`의 기대값).
+
+```text
+오늘: 2026-10-16(금)
+내일: 2026-10-17(토), 모레: 2026-10-18(일)
+이번 주: 월 2026-10-12, 화 2026-10-13, 수 2026-10-14, 목 2026-10-15, 금 2026-10-16, 토 2026-10-17, 일 2026-10-18
+다음 주: 월 2026-10-19, 화 2026-10-20, 수 2026-10-21, 목 2026-10-22, 금 2026-10-23, 토 2026-10-24, 일 2026-10-25
+```
+
+**코드 읽기**: 한 주는 월요일부터 일요일까지로 정합니다(`previousOrSame(MONDAY)`). "이번 주"의 뜻을 코드가 정해 두는 셈입니다. 이 날짜표는 `SearchCriteriaExtractor`, [8장](08-tool-calling-agent.md)의 Tool Calling 프롬프트, [9장](09-orchestrator-workers.md)의 Planner 프롬프트가 함께 씁니다. 결정적으로 계산할 수 있는 일은 코드가 하고, LLM에게는 고르는 일만 남긴다는 이 책의 원칙이 프롬프트 한 줄에도 적용됩니다.
+
+> **직접 확인하기**
+다섯째, **코드가 확실히 할 수 있는 일은 LLM에게 맡기지 않는다.** 날짜표를 넣은 뒤에도 운영에서 `qwen2.5:3b`는 "이번 주 토요일 김포에서 제주"를 2026-10-18로 검색했습니다(정답은 10-17). 표를 주었어도 표에서 **고르는** 일마저 틀린 것입니다. "이번 주 토요일"이 며칠인지는 달력만 있으면 답이 하나로 정해지는 문제입니다. 이런 일까지 LLM에게 맡길 이유가 없습니다. 그래서 LLM에게 보내기 전에 코드가 문장 속 날짜 표현 옆에 날짜를 직접 붙입니다.
+
+파일: `src/main/java/net/java21/flyschedule/service/ai/DateContext.java`
+
+```java
+    /** 오늘, 내일, 모레, 글피 (내일모레는 모레) */
+    private static final Pattern RELATIVE_DAY = Pattern.compile("(내일모레|오늘|내일|모레|글피)(?!\\s*\\()");
+    /** [이번 주|다음 주|다다음 주] X요일 */
+    private static final Pattern WEEKDAY =
+            Pattern.compile("(?:(이번\\s*주|다음\\s*주|다다음\\s*주)\\s*)?([월화수목금토일])요일(?!\\s*\\()");
+```
+
+| 문장 (오늘 2026-10-16 금) | `annotate()` 결과 |
+|---|---|
+| 이번 주 토요일 김포에서 제주 | 이번 주 토요일(2026-10-17) 김포에서 제주 |
+| 이번 주 금요일이나 토요일에 김포나 광주에서 제주 | 이번 주 금요일(2026-10-16)이나 토요일(2026-10-17)에 김포나 광주에서 제주 |
+| 수요일 출발 | 수요일(2026-10-21) 출발 |
+| 모레랑 글피 | 모레(2026-10-18)랑 글피(2026-10-19) |
+
+**코드 읽기**
+
+- 두 정규식이 "오늘·내일·모레·글피"와 "[이번 주·다음 주·다다음 주] X요일"을 찾고, 찾은 표현 뒤에 `(YYYY-MM-DD)`를 붙입니다. 표의 기대값은 모두 `DateContextTest`에 있습니다.
+- "금요일이나 토요일"처럼 앞에 나온 "이번 주"는 뒤의 요일에도 적용합니다. 주 표현 없이 요일만 있으면 오늘을 포함해 가장 가까운 그 요일로 봅니다.
+- 끝의 `(?!\\s*\\()`는 "바로 뒤에 괄호가 없을 때만"이라는 뜻입니다. 이미 날짜가 붙은 문장에 다시 붙이지 않으므로, 여러 번 불러도 결과가 같습니다(`annotateIsIdempotent`).
+- "주말", "3일 뒤", 연도 없는 "3월 25일"처럼 코드가 확실하게 정하기 어려운 표현은 건드리지 않습니다. 이런 표현만 LLM이 날짜표를 보고 해석합니다.
+
+날짜표(`describe()`)는 그대로 프롬프트에 남아 있습니다. 코드가 붙인 날짜가 1차, 날짜표가 2차 안전망입니다. 덤으로 정규식 경로도 넓어졌습니다. `parseWithRegex()`는 `2026-10-17` 같은 절대 날짜를 읽을 수 있으므로, 날짜가 붙은 "다음 주 금요일 광주에서 제주"는 LLM 없이 정규식으로 끝납니다(2.6절).
+
+> **직접 확인하기**
+> ```bash
+> ./mvnw test -Dtest=DateContextTest
+> ```
+> 기대 결과: `Failures: 0, Errors: 0`. 날짜표(오늘이 금요일인 경우, 일요일인 경우, 월이 바뀌는 주)와 `annotate()`(주 표현 이어 붙이기, 요일만 있는 경우, 이미 날짜가 붙은 경우)를 검사합니다.
 
 > **팁**
 > 프롬프트를 고쳤다면 같은 문장을 여러 번, 가능하면 두 모델로 보내 확인합니다. 한 번 잘 나왔다고 늘 잘 나오는 것은 아닙니다(1장의 비결정성). 프롬프트에 무엇이 실제로 나갔는지는 [3장](03-advisor.md)에서 로그로 들여다봅니다.
@@ -270,14 +406,15 @@ LLM이 문장을 잘 읽는다면 처음부터 LLM에게 맡기면 되지 않을
 | 비용 | 없음 | 호출마다 토큰 비용(Gemini) 또는 서버 자원(Ollama) |
 | 실패할 때 | 빈 값을 돌려주고 LLM에 넘긴다 | JSON이 깨지거나 빈칸이 생긴다 |
 
-`parseWithRegex()`는 확신할 수 있을 때만 결과를 돌려주고, 조금이라도 해석이 필요하면 포기합니다. 문장에서 찾은 공항 이름이 정확히 두 개가 아니거나("김포나 광주에서 제주"는 세 개), "다음 주 금요일", "3일 뒤"처럼 계산이 필요한 날짜 표현이 있으면 빈 값을 돌려줘 LLM에 맡깁니다. 정규식의 규칙은 [7장](07-coordinator.md)에서 자세히 봅니다.
+`parseWithRegex()`는 확신할 수 있을 때만 결과를 돌려주고, 조금이라도 해석이 필요하면 포기합니다. 문장에서 찾은 공항 이름이 정확히 두 개가 아니거나("김포나 광주에서 제주"는 세 개), "주말", "3일 뒤"처럼 코드가 날짜를 붙이지 못한 표현이 있으면 빈 값을 돌려줘 LLM에 맡깁니다. 정규식의 규칙은 [7장](07-coordinator.md)에서 자세히 봅니다.
 
 | 문장 | 경로 | 이유 |
 |------|------|------|
 | 내일 광주에서 제주로 가는 항공편 알려줘 | 정규식 | 공항 두 개, "내일"은 정규식이 처리 |
 | 모레 김포에서 제주 오후 2시 이후 항공편 | 정규식 | 시간 조건도 정규식이 처리 |
 | flights from Gwangju to Jeju tomorrow | LLM | 한글 공항 이름이 없다 |
-| 다음 주 금요일 광주에서 제주 | LLM | 날짜 계산이 필요하다 |
+| 다음 주 금요일 광주에서 제주 | 정규식 | `annotate()`가 날짜를 붙이므로 계산이 필요 없다 |
+| 주말에 광주에서 제주 | LLM | "주말"은 코드가 날짜 하나로 정하지 않는다 |
 
 > **직접 확인하기**
 > 애플리케이션을 실행하고(`./mvnw spring-boot:run`) 다음 두 요청을 보냅니다.
@@ -325,7 +462,7 @@ LLM이 들어간 코드는 테스트하기 어려워 보입니다. 결과가 매
     @DisplayName("정규식이 실패하면 LLM의 Structured Output을 사용한다")
     void usesLlmWhenRegexFails() {
         SearchCriteria fromLlm = new SearchCriteria("김포", "제주", "2026-03-27", null, null, null, null);
-        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(SearchCriteria.class))
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchCriteria>>any()))
                 .thenReturn(fromLlm);
 
         SearchCriteriaExtractor.Extraction extraction =
@@ -339,6 +476,7 @@ LLM이 들어간 코드는 테스트하기 어려워 보입니다. 결과가 매
 **코드 읽기**
 
 - `RETURNS_DEEP_STUBS`는 메서드 체인의 중간 객체까지 Mockito가 자동으로 가짜를 만들게 하는 옵션입니다. 그 덕분에 `prompt().system(...).user(...).call().entity(...)`라는 긴 체인의 끝에 "LLM이 돌려줄 객체"를 한 줄로 정할 수 있습니다.
+- `entity(...)`의 인자가 클래스가 아니라 변환기 객체(`BeanOutputConverter`)이므로, 어떤 변환기가 와도 맞도록 `any()`로 받습니다. 타입을 밝힌 `ArgumentMatchers.<StructuredOutputConverter<SearchCriteria>>any()`는 `entity`의 여러 오버로드 가운데 변환기를 받는 쪽을 고르게 합니다.
 - `regexSkipsLlm`은 `verifyNoInteractions(chatClient)`로 가짜 `ChatClient`에 아무 호출도 없었음을 확인합니다. "정규식이 성공하면 LLM을 부르지 않는다"는 설계 의도를 테스트로 고정한 것입니다.
 - `usesLlmWhenRegexFails`는 공항이 하나("서울"은 공항 이름이 아님)뿐인 문장으로 LLM 경로를 타게 하고, LLM이 돌려준 객체가 그대로 결과가 되는지 봅니다.
 
@@ -355,18 +493,20 @@ LLM이 들어간 코드는 테스트하기 어려워 보입니다. 결과가 매
 - `ChatModel`은 제공자와 통신하고, `ChatClient`는 프롬프트를 조립하고 호출하고 결과를 바꾸는 공통 API입니다.
 - `ChatClientConfig`는 모델마다 `ChatClient` 빈을 하나씩 만들고, Tool은 기본 등록하지 않습니다.
 - `ChatClientProvider`는 요청의 `model` 값으로 `ChatClient`를 고르고, Gemini 키가 없으면 그 순간에만 안내 예외를 던집니다.
-- `.entity(SearchCriteria.class)`로 LLM의 답을 자바 객체로 받고, `@JsonPropertyDescription`은 LLM에게 전달되는 필드 설명이 됩니다. 받은 값은 `hasRoute()`처럼 코드로 다시 검증합니다.
-- 프롬프트에는 LLM이 모르는 사실(오늘 날짜)을 주고, 규칙은 짧은 목록으로, 근거 없는 값은 만들지 못하게 씁니다.
+- `.entity(...)`로 LLM의 답을 자바 객체로 받고, `@JsonPropertyDescription`은 LLM에게 전달되는 필드 설명이 됩니다. 받은 값은 `hasRoute()`처럼 코드로 다시 검증합니다.
+- 작은 모델은 JSON을 문장으로 감싸기도 합니다. `LenientJsonCleaner`를 `BeanOutputConverter`에 연결해 JSON 부분만 읽습니다.
+- 프롬프트에는 LLM이 모르는 사실(오늘 날짜)을 날짜표로 주고, 규칙은 짧은 목록으로, 근거 없는 값은 만들지 못하게 씁니다. 계산은 시키지 않고 찾게 합니다.
+- 코드가 확실히 할 수 있는 일은 LLM에게 맡기지 않습니다. `DateContext.annotate()`가 "이번 주 토요일" 옆에 날짜를 붙여 보내고, 그 덕분에 요일 표현도 정규식 경로로 처리됩니다.
 - 정규식으로 확신할 수 있으면 LLM을 부르지 않습니다. 어느 경로로 갈지는 코드가 정합니다.
 
 ## 연습 문제
 
 **1. [기본] 세 문장의 경로 비교하기**
 
-다음 세 문장을 `"model": "ollama"`로 `POST /api/search/coordinator`에 보냅니다: `내일 광주에서 제주로 가는 항공편 알려줘`, `flights from Gwangju to Jeju tomorrow`, `다음 주 금요일 광주에서 제주`.
+다음 네 문장을 `"model": "ollama"`로 `POST /api/search/coordinator`에 보냅니다: `내일 광주에서 제주로 가는 항공편 알려줘`, `flights from Gwangju to Jeju tomorrow`, `다음 주 금요일 광주에서 제주`, `주말에 광주에서 제주`.
 
-- **힌트**: `SearchCriteriaExtractor.parseWithRegex()`의 공항 개수 검사와 `COMPLEX_DATE_PATTERN`.
-- **완료 기준**: 세 응답의 `trace[0].kind`, `trace[0].detail`, `elapsedMs`를 표로 정리하고, 각 문장이 그 경로로 간 이유를 한 문장씩 적습니다. 셋째 문장의 `detail`에 찍힌 날짜가 실제로 다음 주 금요일인지 달력으로 확인합니다.
+- **힌트**: `DateContext.annotate()`, `SearchCriteriaExtractor.parseWithRegex()`의 공항 개수 검사와 `COMPLEX_DATE_PATTERN`.
+- **완료 기준**: 네 응답의 `trace[0].kind`, `trace[0].detail`, `elapsedMs`를 표로 정리하고, 각 문장이 그 경로로 간 이유를 한 문장씩 적습니다. 셋째 문장이 LLM 없이(CODE) 처리되고 `detail`의 날짜가 실제로 다음 주 금요일인지 달력으로 확인합니다.
 
 **2. [기본] 모델 이름 처리를 테스트로 고정하기**
 
@@ -375,12 +515,12 @@ LLM이 들어간 코드는 테스트하기 어려워 보입니다. 결과가 매
 - **힌트**: 같은 파일의 `selectsByModelName()`과 `normalize()` 테스트를 본뜹니다.
 - **완료 기준**: `get("gpt")`와 `get("")`이 Ollama 클라이언트를, `normalize("gpt")`가 `"ollama"`를 돌려준다는 단언을 넣은 테스트가 `./mvnw test -Dtest=ChatClientProviderTest`로 통과합니다.
 
-**3. [도전] 오늘 날짜를 빼면 어떻게 되는가**
+**3. [도전] 날짜표 대신 오늘 날짜 한 줄만 주면 어떻게 되는가**
 
-`SearchCriteriaExtractor.extract()`의 시스템 프롬프트에서 `오늘 날짜는 %s입니다...` 줄을 지우고, `flights from Gwangju to Jeju tomorrow`를 Ollama로 세 번 보냅니다. 실험 뒤 원래대로 되돌립니다.
+`SearchCriteriaExtractor.extract()`의 `.formatted(DateContext.describe())`를 `.formatted("오늘: " + LocalDate.now())`로 바꾸고, `flights from Gwangju to Jeju this Saturday`와 `flights from Gimpo to Jeju next Friday`를 Ollama로 세 번씩 보냅니다. 실험 뒤 원래대로 되돌립니다.
 
-- **힌트**: 결과 날짜는 응답의 `trace[0].detail`과 `trace[1].detail`(날짜 변환)에 나옵니다. 줄을 지워도 `.formatted(...)`는 그대로 두어도 컴파일됩니다.
-- **완료 기준**: 지우기 전과 후의 날짜를 표로 비교하고, 프롬프트에 날짜를 넣는 이유를 두 문장으로 설명합니다. 되돌린 뒤 `./mvnw test -Dtest=SearchCriteriaExtractorTest`가 통과합니다.
+- **힌트**: 결과 날짜는 응답의 `trace[0].detail`과 `trace[1].detail`(날짜 변환)에 나옵니다. 비교 기준은 `DateContext.describe()`가 만드는 표입니다.
+- **완료 기준**: 바꾸기 전과 후의 날짜를 표로 비교하고, 날짜표를 주는 이유를 두 문장으로 설명합니다. 되돌린 뒤 `./mvnw test -Dtest=SearchCriteriaExtractorTest,DateContextTest`가 통과합니다.
 
 **4. [도전] 필드 설명의 힘 관찰하기**
 

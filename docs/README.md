@@ -39,16 +39,16 @@ Java 21, Spring Boot 3.5.11, Spring AI 1.1.4를 씁니다. 공공데이터 포�
 | 장 | 제목 | 이 장에서 하는 일 |
 |---|---|---|
 | [들어가며](./00-introduction.md) | 들어가며 | 책의 질문, 완성 앱 둘러보기, 개발 환경 준비 |
-| [1장](./01-llm-and-spring-ai.md) | LLM과 Spring AI 시작하기 | 토큰·컨텍스트·temperature, Spring AI 구조, Ollama·Gemini 설정 |
-| [2장](./02-chatclient.md) | ChatClient로 LLM 부르기 | `prompt().call().content()`, Structured Output, 프롬프트 설계 기초 |
+| [1장](./01-llm-and-spring-ai.md) | LLM과 Spring AI 시작하기 | 토큰·컨텍스트·temperature, Spring AI 구조, Ollama·Gemini 설정(모델 선택, thinking level) |
+| [2장](./02-chatclient.md) | ChatClient로 LLM 부르기 | `prompt().call().content()`, Structured Output과 `LenientJsonCleaner`, 프롬프트 설계 기초(날짜표, `DateContext.annotate`) |
 | [3장](./03-advisor.md) | Advisor로 LLM 호출 들여다보기 | `SimpleLoggerAdvisor`, 직접 만드는 Advisor, 관찰의 중요성 |
 | [4장](./04-tool-calling.md) | Tool Calling의 원리 | LLM은 요청하고 Spring AI가 실행한다, `@Tool`·`@ToolParam` |
-| [5장](./05-domain-tools.md) | 항공편 도메인 Tool 만들기 | 공공데이터 포털 API, `ApiClientService`, Tool 7개와 설계 원칙 |
+| [5장](./05-domain-tools.md) | 항공편 도메인 Tool 만들기 | 공공데이터 포털 API, `ApiClientService`, Tool 7개와 설계 원칙, Tool 결과 요약(`CompactFlightResultConverter`) |
 | [6장](./06-specialized-agents.md) | 전문 Agent로 나누기 | LLM 없는 결정적 컴포넌트, 단일 책임, 단위 테스트 |
 | [7장](./07-coordinator.md) | Coordinator 패턴 — 코드가 결정한다 | 정규식 우선과 LLM fallback, 실행 기록, 패턴의 한계 |
-| [8장](./08-tool-calling-agent.md) | Tool Calling Agent — LLM이 결정한다 | system 프롬프트, Tool 호출 기록, 실패 사례 |
-| [9장](./09-orchestrator-workers.md) | Orchestrator-Workers 패턴 — LLM이 나누고 코드가 실행한다 | 계획과 검증, 가상 스레드 병렬 실행, 결과 종합 |
-| [10장](./10-choosing-testing-operating.md) | 패턴 고르기, 테스트, 운영 | 패턴 선택 가이드, 가짜 LLM 테스트, 작업 API, 배포, 확장 |
+| [8장](./08-tool-calling-agent.md) | Tool Calling Agent — LLM이 결정한다 | system 프롬프트, Tool 호출 기록, 실패 사례, 측정하고 개선하기(99.4초 → 약 24초) |
+| [9장](./09-orchestrator-workers.md) | Orchestrator-Workers 패턴 — LLM이 나누고 코드가 실행한다 | 계획과 검증(지어낸 조건 지우기), 가상 스레드 병렬 실행, 결과 종합 |
+| [10장](./10-choosing-testing-operating.md) | 패턴 고르기, 테스트, 운영 | 패턴 선택 가이드, 측정하고 개선하기, 가짜 LLM 테스트, 작업 API, 배포, 확장 |
 | [부록 A](./appendix-a-glossary.md) | 용어집 | 책에 나온 용어와 처음 나오는 장 |
 | [부록 B](./appendix-b-troubleshooting.md) | 문제 해결 모음 | 증상 → 원인 → 해결 |
 

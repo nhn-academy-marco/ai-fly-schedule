@@ -4,12 +4,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.java21.flyschedule.dto.search.SearchCriteria;
 import net.java21.flyschedule.service.agent.AirportCodeAgent;
+import net.java21.flyschedule.service.ai.DateContext;
 import net.java21.flyschedule.service.ai.LenientJsonCleaner;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -38,9 +38,11 @@ public class FlightSearchPlanner {
                         당신은 국내선 항공편 검색 작업을 나누는 Orchestrator입니다.
                         사용자 요청에 출발지, 도착지, 날짜 후보가 여러 개 있으면 조합마다 검색 작업을 하나씩 만드세요.
                         조건이 하나뿐이면 작업도 하나입니다. 작업은 최대 %d개까지만 만드세요.
-                        오늘 날짜는 %s(%s)입니다. "이번 주 금요일" 같은 표현은 YYYY-MM-DD로 바꾸세요.
+                        "이번 주 금요일" 같은 날짜는 계산하지 말고 아래 날짜표에서 찾아 YYYY-MM-DD로 적으세요.
                         공항은 한글 이름(광주, 김포, 제주 등)으로 적고, 없는 조건은 null로 둡니다.
-                        """.formatted(MAX_TASKS, LocalDate.now(), LocalDate.now().getDayOfWeek()))
+
+                        %s
+                        """.formatted(MAX_TASKS, DateContext.describe()))
                 .user(message)
                 .call()
                 // 작은 모델이 JSON 앞뒤에 문장을 붙여도 JSON 부분만 읽는다

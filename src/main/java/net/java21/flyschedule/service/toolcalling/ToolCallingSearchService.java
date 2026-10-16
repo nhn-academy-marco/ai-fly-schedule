@@ -11,10 +11,10 @@ import net.java21.flyschedule.dto.search.TraceStep.Kind;
 import net.java21.flyschedule.mcp.FlightSearchTool;
 import net.java21.flyschedule.mcp.ToolResultCapture;
 import net.java21.flyschedule.mcp.ToolResultCapture.ToolCall;
+import net.java21.flyschedule.service.ai.DateContext;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -95,14 +95,15 @@ public class ToolCallingSearchService {
         return """
                 당신은 국내선 항공편 검색 도우미입니다. 반드시 한국어로 답변하세요.
                 항공편 정보는 반드시 Tool을 호출해서 얻고, Tool 결과에 없는 내용은 지어내지 마세요.
-                오늘: %s (%s)
                 규칙:
                 - 날짜는 "2026-06-25" 형식으로 Tool에 전달합니다.
                 - 시간은 24시간 형식("14:00")으로 전달합니다.
                 - 공항은 한글 이름 그대로 전달합니다. (예: "광주", "제주")
+                - "내일", "이번 주 금요일" 같은 날짜는 계산하지 말고 아래 날짜표에서 찾습니다.
                 - 답변은 항공편 수와 가장 저렴한 항공편을 중심으로 2~3문장으로 짧게 요약합니다. 항공편 목록을 나열하지 마세요.
-                """.formatted(LocalDate.now(), LocalDate.now().getDayOfWeek()
-                        .getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.KOREAN));
+
+                %s
+                """.formatted(DateContext.describe());
     }
 
     /**

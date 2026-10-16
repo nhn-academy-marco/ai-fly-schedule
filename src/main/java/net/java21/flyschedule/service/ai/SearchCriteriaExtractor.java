@@ -64,10 +64,12 @@ public class SearchCriteriaExtractor {
         SearchCriteria criteria = chatClient.get().prompt()
                 .system("""
                         항공편 검색 문장에서 검색 조건을 추출합니다.
-                        오늘 날짜는 %s입니다. "내일", "다음 주 금요일" 같은 표현은 이 날짜를 기준으로 YYYY-MM-DD로 바꿉니다.
+                        "내일", "다음 주 금요일" 같은 표현은 계산하지 말고 아래 날짜표에서 찾아 YYYY-MM-DD로 적습니다.
                         공항은 공항 코드가 아니라 한글 이름(광주, 김포, 제주 등)으로 적습니다.
                         문장에 없는 조건은 null로 둡니다.
-                        """.formatted(LocalDate.now()))
+
+                        %s
+                        """.formatted(DateContext.describe()))
                 .user(message)
                 .call()
                 // 작은 모델이 JSON 앞뒤에 문장을 붙여도 JSON 부분만 읽는다

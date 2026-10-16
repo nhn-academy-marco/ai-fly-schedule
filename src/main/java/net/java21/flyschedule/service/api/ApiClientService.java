@@ -121,12 +121,10 @@ public class ApiClientService {
         log.info("공항 목록 API 호출");
 
         AirportListResponse response = get(url, AirportListResponse.class);
-
-        if (response != null && "00".equals(response.getResultCode())) {
-            return response.getItems() != null ? response.getItems() : Collections.emptyList();
+        if (response == null || !"00".equals(response.getResultCode())) {
+            throw new ExternalApiException("공공데이터 포털 API 오류: 공항 목록을 조회하지 못했습니다.");
         }
-
-        return Collections.emptyList();
+        return response.getItems() != null ? response.getItems() : Collections.emptyList();
     }
 
     /**
@@ -143,12 +141,10 @@ public class ApiClientService {
         log.info("항공사 목록 API 호출");
 
         AirlineListResponse response = get(url, AirlineListResponse.class);
-
-        if (response != null && "00".equals(response.getResultCode())) {
-            return response.getItems() != null ? response.getItems() : Collections.emptyList();
+        if (response == null || !"00".equals(response.getResultCode())) {
+            throw new ExternalApiException("공공데이터 포털 API 오류: 항공사 목록을 조회하지 못했습니다.");
         }
-
-        return Collections.emptyList();
+        return response.getItems() != null ? response.getItems() : Collections.emptyList();
     }
 
     /**

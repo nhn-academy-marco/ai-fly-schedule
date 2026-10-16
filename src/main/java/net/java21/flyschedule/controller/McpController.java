@@ -100,7 +100,9 @@ public class McpController {
     @GetMapping("/airports")
     public ApiResponse<List<Map<String, String>>> getAirports() {
         // 공항 정보를 간단한 Map 형태로 변환
+        // 이름이나 ID가 비어 있는 항목은 건너뛴다 (Map.of는 null 값을 허용하지 않음)
         List<Map<String, String>> airports = airportInfoTool.getAirportList().stream()
+                .filter(airport -> airport.getAirportId() != null && airport.getAirportName() != null)
                 .map(airport -> Map.of(
                         "airportId", airport.getAirportId(),
                         "airportName", airport.getAirportName()
@@ -131,6 +133,7 @@ public class McpController {
     public ApiResponse<List<Map<String, String>>> getAirlines() {
         // 항공사 정보를 간단한 Map 형태로 변환
         List<Map<String, String>> airlines = airlineInfoTool.getAirlineList().stream()
+                .filter(airline -> airline.getAirlineId() != null && airline.getAirlineName() != null)
                 .map(airline -> Map.of(
                         "airlineId", airline.getAirlineId(),
                         "airlineName", airline.getAirlineName()

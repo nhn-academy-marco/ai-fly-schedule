@@ -32,14 +32,14 @@ build/
 ### VS Code ###
 .vscode/
 /.claude/
-/.mvn/
 /logs/
 /.gitattributes
-/mvnw
-/mvnw.cmd
 
 ### HTTP Client 비공개 환경 변수 (서비스 키) ###
 http-client.private.env.json
 
 ### macOS ###
 .DS_Store
+
+### 환경 변수 파일 (API 키) ###
+.env

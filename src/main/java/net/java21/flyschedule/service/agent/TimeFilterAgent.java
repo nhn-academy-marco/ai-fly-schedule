@@ -130,7 +130,7 @@ public class TimeFilterAgent {
      * @return LocalTime 객체
      */
     private LocalTime parseDepartureTime(String departureTime) {
-        if (departureTime == null || departureTime.length() < 8) {
+        if (departureTime == null || departureTime.length() < 12) {
             throw new IllegalArgumentException("잘못된 출발 시간 형식");
         }
 

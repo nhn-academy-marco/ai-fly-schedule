@@ -91,6 +91,18 @@ class ApiClientServiceTest {
     }
 
     @Test
+    @DisplayName("공항 목록 API가 오류 코드를 돌려주면 빈 목록이 아니라 ExternalApiException으로 알린다")
+    void airportListError() {
+        server.expect(requestTo(containsString("/GetArprtList"))).andRespond(withSuccess("""
+                {"response":{"header":{"resultCode":"30","resultMsg":"SERVICE_KEY_IS_NOT_REGISTERED_ERROR"}}}
+                """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> service.getAirportList())
+                .isInstanceOf(ExternalApiException.class)
+                .hasMessageContaining("공항 목록");
+    }
+
+    @Test
     @DisplayName("서비스 키가 없으면 API를 호출하지 않고 설정 방법을 안내한다")
     void missingServiceKey() {
         DataGoKrApiProperties noKey = new DataGoKrApiProperties();

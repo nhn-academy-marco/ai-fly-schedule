@@ -57,7 +57,7 @@ public class ToolCallingSearchService {
         try {
             String answer = chatClientProvider.get(model).prompt()
                     .system(systemPrompt())
-                    .user(message)
+                    .user(DateContext.annotate(message)) // 날짜 표현 옆에 코드가 계산한 날짜를 붙여 보낸다
                     // 항공편 검색 Tool 3개만 넘긴다. 공항·항공사 조회 Tool(AirportInfoTool, AirlineInfoTool)은
                     // 검색 Tool이 한글 공항 이름을 직접 받으므로 필요 없고, 넘기면 LLM이 매번 읽어야 할 Tool 설명만 늘어난다
                     .tools(flightSearchTool)

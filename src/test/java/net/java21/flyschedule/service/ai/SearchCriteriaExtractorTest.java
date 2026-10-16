@@ -118,12 +118,11 @@ class SearchCriteriaExtractorTest {
 
     @ParameterizedTest
     @CsvSource({
-            "'다음 주 금요일 광주에서 제주'",
-            "'이번 주 토요일 김포에서 제주'",
             "'3일 뒤 광주에서 제주'",
+            "'주말에 광주에서 제주'",
             "'3월 25일 광주에서 제주'"
     })
-    @DisplayName("계산이 필요한 날짜 표현이 있으면 정규식은 포기한다 (오늘 날짜로 잘못 검색하지 않음)")
+    @DisplayName("코드가 계산하지 못하는 날짜 표현이 있으면 정규식은 포기한다 (오늘 날짜로 잘못 검색하지 않음)")
     void giveUpOnComplexDates(String message) {
         assertThat(extractor.parseWithRegex(message)).isEmpty();
     }
@@ -137,6 +136,19 @@ class SearchCriteriaExtractorTest {
     @DisplayName("공항이 정확히 두 개가 아니면 정규식은 포기한다 (LLM에 맡김)")
     void giveUpWhenNotExactlyTwoAirports(String message) {
         assertThat(extractor.parseWithRegex(message)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("요일 표현은 코드가 날짜를 계산해 붙이므로 LLM 없이 정규식으로 처리한다")
+    void weekdayWithoutLlm() {
+        SearchCriteriaExtractor.Extraction extraction = extractor.extract("다음 주 금요일 광주에서 제주", () -> chatClient);
+
+        java.time.LocalDate nextFriday = java.time.LocalDate.now()
+                .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+                .plusWeeks(1).plusDays(4);
+        assertThat(extraction.usedLlm()).isFalse();
+        assertThat(extraction.criteria().date()).isEqualTo(nextFriday.toString());
+        verifyNoInteractions(chatClient);
     }
 
     // ===== LLM 사용 여부 =====

@@ -98,6 +98,40 @@ class FlightSearchPlannerTest {
     }
 
     @Test
+    @DisplayName("문장에 시간·가격이 없으면 LLM이 지어낸 시간·가격 조건을 지운다 (운영에서 '제일 싼'에 1,000원 이상을 붙인 사례)")
+    void removesInventedConditions() {
+        SearchCriteria invented = new SearchCriteria("김포", "제주", "2026-10-16", null, "10:00", 1000, null);
+
+        SearchPlan result = planner.validate(plan(invented), "이번 주 금요일 김포에서 제주 가는 제일 싼 항공편");
+
+        assertThat(result.tasks()).containsExactly(task("김포", "제주", "2026-10-16"));
+    }
+
+    @Test
+    @DisplayName("문장에 시간·가격이 있으면 조건을 그대로 둔다")
+    void keepsRealConditions() {
+        SearchCriteria real = new SearchCriteria("김포", "제주", "2026-10-16", "14:00", null, null, 60000);
+
+        SearchPlan result = planner.validate(plan(real), "금요일 김포에서 제주 오후 2시 이후 6만원 이하");
+
+        assertThat(result.tasks()).containsExactly(real);
+    }
+
+    @Test
+    @DisplayName("LLM에게는 날짜를 붙인 문장을 보낸다")
+    void sendsAnnotatedMessage() {
+        ChatClient chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(chatClient.prompt().system(anyString()).user(anyString()).call()
+                .entity(org.mockito.ArgumentMatchers.<org.springframework.ai.converter.StructuredOutputConverter<SearchPlan>>any()))
+                .thenReturn(plan(task("광주", "제주", "2026-10-17")));
+
+        planner.plan("내일 광주에서 제주", chatClient);
+
+        String tomorrow = java.time.LocalDate.now().plusDays(1).toString();
+        org.mockito.Mockito.verify(chatClient.prompt().system(anyString())).user("내일(" + tomorrow + ") 광주에서 제주");
+    }
+
+    @Test
     @DisplayName("'광주공항'처럼 공항이 붙은 이름도 유효한 공항으로 본다")
     void acceptsAirportSuffix() {
         SearchPlan result = planner.validate(plan(task("광주공항", "제주국제공항", "2026-03-27")));

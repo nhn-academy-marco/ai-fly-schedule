@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Orchestrator의 계획 단계: LLM이 요청을 하위 검색 작업으로 나눕니다.
@@ -43,18 +44,25 @@ public class FlightSearchPlanner {
 
                         %s
                         """.formatted(MAX_TASKS, DateContext.describe()))
-                .user(message)
+                .user(DateContext.annotate(message)) // 날짜 표현 옆에 코드가 계산한 날짜를 붙여 보낸다
                 .call()
                 // 작은 모델이 JSON 앞뒤에 문장을 붙여도 JSON 부분만 읽는다
                 .entity(new BeanOutputConverter<>(SearchPlan.class, null, new LenientJsonCleaner()));
 
-        return validate(plan);
+        return validate(plan, message);
     }
 
     /**
      * LLM이 만든 계획을 검증합니다. 공항을 알 수 없는 작업은 버리고, 중복을 없애고, 개수를 제한합니다.
      */
     SearchPlan validate(SearchPlan plan) {
+        return validate(plan, null);
+    }
+
+    /**
+     * @param message 사용자 문장. 주어지면 문장에 없는 시간·가격 조건(LLM이 지어낸 조건)을 지운다
+     */
+    SearchPlan validate(SearchPlan plan, String message) {
         if (plan == null || plan.tasks() == null) {
             throw new IllegalArgumentException("검색 계획을 세우지 못했습니다. 출발지와 도착지를 포함해 다시 입력해 주세요.");
         }
@@ -63,6 +71,7 @@ public class FlightSearchPlanner {
         Set<List<Object>> seen = new HashSet<>();
         List<SearchCriteria> tasks = plan.tasks().stream()
                 .filter(SearchCriteria::hasRoute)
+                .map(task -> removeInventedConditions(task, message))
                 .filter(task -> airportCodeAgent.isValidAirport(task.departure())
                         && airportCodeAgent.isValidAirport(task.arrival()))
                 .filter(task -> !departureCode(task).equals(arrivalCode(task)))
@@ -78,6 +87,27 @@ public class FlightSearchPlanner {
             throw new IllegalArgumentException("검색할 수 있는 작업이 없습니다. 지원하는 공항 이름으로 다시 입력해 주세요.");
         }
         return new SearchPlan(plan.reasoning(), tasks);
+    }
+
+    private static final Pattern TIME_IN_MESSAGE = Pattern.compile("\\d{1,2}\\s*시|\\d{1,2}:\\d{2}");
+    private static final Pattern PRICE_IN_MESSAGE = Pattern.compile("\\d+\\s*(만\\s*)?원");
+
+    /**
+     * 문장에 시간·가격이 없는데 LLM이 붙인 조건을 지웁니다.
+     * 운영에서 작은 모델이 "제일 싼 항공편"이라는 말에 "10:00 이전, 1,000원 이상"을 지어낸 사례가 있었습니다.
+     * ("제일 싼"은 가격 범위가 아니라 결과를 비교하라는 뜻이므로 범위 조건이 필요 없습니다.)
+     */
+    static SearchCriteria removeInventedConditions(SearchCriteria task, String message) {
+        if (message == null) {
+            return task;
+        }
+        boolean hasTime = TIME_IN_MESSAGE.matcher(message).find();
+        boolean hasPrice = PRICE_IN_MESSAGE.matcher(message).find();
+        return new SearchCriteria(task.departure(), task.arrival(), task.date(),
+                hasTime ? task.afterTime() : null,
+                hasTime ? task.beforeTime() : null,
+                hasPrice ? task.minPrice() : null,
+                hasPrice ? task.maxPrice() : null);
     }
 
     private String departureCode(SearchCriteria task) {

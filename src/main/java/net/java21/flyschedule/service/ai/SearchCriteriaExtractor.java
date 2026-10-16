@@ -54,6 +54,8 @@ public class SearchCriteriaExtractor {
      * @param chatClient LLM이 필요할 때만 꺼내 쓴다 (정규식으로 끝나면 모델 설정을 확인하지 않음)
      */
     public Extraction extract(String message, Supplier<ChatClient> chatClient) {
+        // "이번 주 토요일" 같은 표현에 코드가 계산한 날짜를 먼저 붙인다 → 정규식도 LLM도 계산할 필요가 없다
+        message = DateContext.annotate(message);
         Optional<SearchCriteria> parsed = parseWithRegex(message);
         if (parsed.isPresent()) {
             log.info("정규식으로 검색 조건 추출: {}", parsed.get());

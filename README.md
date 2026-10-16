@@ -1,7 +1,7 @@
 # Spring AI 에이전트 패턴 실습: 항공편 검색
 
-**Spring AI 1.1.4**로 LLM 애플리케이션의 대표적인 세 가지 구조를 직접 만들어 보는 교육용 프로젝트입니다.
-"이번 주 금요일이나 토요일에 김포나 광주에서 제주 가는 제일 싼 항공편 찾아줘" 같은 질문을 **Coordinator 패턴**, **Tool Calling 에이전트**, **Orchestrator-Workers 패턴**의 세 방식으로 풀고, 실행 기록(타임라인) 화면에서 **다음 단계를 누가 결정하는지(코드인가 LLM인가)** 나란히 비교합니다.
+Spring AI 1.1.4로 LLM 애플리케이션의 대표적인 세 가지 구조를 직접 만들어 보는 교육용 프로젝트입니다.
+"이번 주 금요일이나 토요일에 김포나 광주에서 제주 가는 제일 싼 항공편 찾아줘" 같은 질문을 Coordinator 패턴, Tool Calling 에이전트, Orchestrator-Workers 패턴의 세 방식으로 풀고, 실행 기록(타임라인) 화면에서 **다음 단계를 누가 결정하는지(코드인가 LLM인가)** 나란히 비교합니다.
 
 ---
 
@@ -9,7 +9,7 @@
 
 **[https://fly.java21.net](https://fly.java21.net)**
 
-- 한 문장을 입력하고 세 패턴을 각각 실행해 결과 비교
+- 한 문장을 입력하고 "세 패턴 모두 실행"으로 결과 비교
 - 단계마다 CODE, LLM, TOOL, WORKER로 구분한 실행 기록 타임라인
 - Orchestrator-Workers 패턴에서 Worker가 가상 스레드로 병렬 실행되는 모습 확인
 - Ollama(qwen2.5:3b)와 Gemini(2.5 Flash) 중 모델 선택
@@ -26,16 +26,18 @@
 
 세 엔드포인트 모두 요청 `{"message": "...", "model": "ollama" | "gemini"}`를 받고, 같은 형식의 `SearchResponse`(결과 + 실행 기록)를 돌려줍니다.
 
-> **용어 안내**
-> - 이 프로젝트는 **A2A(Agent2Agent) 프로토콜을 구현하지 않습니다.** A2A는 독립 실행되는 에이전트끼리 HTTP(JSON-RPC)로 통신하는 표준이며, 교재에서는 개념과 비교로만 다룹니다.
-> - 여기서 말하는 **MCP Tool**은 MCP 서버가 아니라 Spring AI Tool Calling(`@Tool`)으로 만든 Tool입니다. MCP 서버로 노출할 수 있는 형태로 설계했다는 뜻입니다.
-> - `service/agent` 패키지의 **전문 에이전트**는 LLM을 쓰지 않는, 한 가지 일만 하는 결정적 컴포넌트입니다.
+> **주의**
+> 다음 용어를 혼동하지 않도록 합니다.
+>
+> - 이 프로젝트는 A2A(Agent2Agent) 프로토콜을 **구현하지 않습니다**. A2A는 독립 실행되는 에이전트끼리 HTTP(JSON-RPC)로 통신하는 표준이며, 교재에서는 개념과 비교로만 다룹니다.
+> - 여기서 말하는 MCP Tool은 MCP 서버가 아니라 Spring AI Tool Calling(`@Tool`)으로 만든 Tool입니다. MCP 서버로 노출할 수 있는 형태로 설계했다는 뜻입니다.
+> - `service/agent` 패키지의 전문 에이전트는 LLM을 쓰지 않는, 한 가지 일만 하는 결정적 컴포넌트입니다.
 
 ---
 
 ## 학습 경로 (4주 완성)
 
-[docs](./docs) 디렉터리에 단계별 교재가 있습니다. 전체 소개는 [교재 개요](./docs/README.md)를 참고하세요.
+[docs](./docs) 디렉터리에 단계별 교재가 있습니다. 대상, 선수 지식, Step별 학습 목표, 강사용 수업 진행 팁은 [수업 안내](./docs/README.md)를 참고하세요.
 
 | 주차 | Step | 주제 | 예상 학습 시간 |
 |------|------|------|----------------|
@@ -62,10 +64,10 @@
 
 ### 1. 사전 요구사항
 
-- **Java 21**
-- **공공데이터 포털 서비스 키** (필수): [국내항공운항정보](https://www.data.go.kr/data/15098526/openapi.do) 활용 신청 후 발급
-- **Google Gemini API 키** (선택): [Google AI Studio](https://aistudio.google.com/app/apikey)에서 발급
-- **Ollama** (선택): 내 컴퓨터에서 모델을 실행할 때만 필요
+- Java 21
+- 공공데이터 포털 서비스 키 (필수): [국내항공운항정보](https://www.data.go.kr/data/15098526/openapi.do) 활용 신청 후 발급
+- Google Gemini API 키 (선택): [Google AI Studio](https://aistudio.google.com/app/apikey)에서 발급
+- Ollama (선택): 내 컴퓨터에서 모델을 실행할 때만 필요
 
 ### 2. 환경 변수 설정
 
@@ -102,7 +104,61 @@ ollama pull qwen2.5:3b-instruct-q4_K_M
 ./mvnw test
 ```
 
-테스트 197개 가운데 196개가 실행되고, 애플리케이션 전체를 띄우는 `contextLoads` 1개는 `@Disabled`로 비활성화되어 있습니다. LLM과 공공데이터 포털 호출은 가짜 구현(또는 `MockRestServiceServer`)으로 바꿔 끼우므로, Ollama·Gemini·서비스 키 없이도 세 패턴의 흐름을 검증할 수 있습니다.
+LLM과 공공데이터 포털 호출은 가짜 구현(또는 `MockRestServiceServer`)으로 바꿔 끼우므로, Ollama·Gemini·서비스 키 없이도 세 패턴의 흐름을 검증할 수 있습니다. 애플리케이션 전체를 띄우는 `contextLoads` 테스트 1개만 `@Disabled`로 꺼 두었습니다. 테스트 수는 계속 바뀔 수 있으니 실행 결과의 `Tests run` 줄로 확인하세요.
+
+---
+
+## 배포
+
+`main` 브랜치에 push하면 GitHub Actions([.github/workflows/maven.yml](./.github/workflows/maven.yml))가 빌드부터 서버 재시작까지 처리합니다.
+
+```text
+[GitHub Actions]  DATA_GO_KR_SERVICE_KEY Secret 확인 (없으면 중단)
+    ↓
+[GitHub Actions]  JDK 21 설치 → mvn -B package -DskipTests → target/fly.jar
+    ↓
+[SSH]             서버의 기존 ~/fly-schedule/startup.sh를 startup.sh.orig로 한 번만 백업
+    ↓
+[SCP]             deploy/startup.sh → ~/fly-schedule/startup.sh
+                  target/fly.jar   → ~/fly-schedule/target/fly.jar
+    ↓
+[SSH]             ~/fly-schedule/startup.sh 실행 (서비스 키를 환경 변수로 전달)
+```
+
+빌드 단계는 `-DskipTests`로 테스트를 건너뛰므로, push하기 전에 로컬에서 `./mvnw test`를 실행하세요.
+
+> **주의**
+> 지금 workflow는 `main` 대상 pull request에서도 실행되며, 배포 단계에 조건이 없어 PR을 열기만 해도 서버에 배포됩니다. PR에서는 빌드만 하려면 배포 단계에 `if: github.event_name == 'push'`를 붙여야 합니다.
+
+### GitHub Secrets
+
+저장소의 Settings > Secrets and variables > Actions에 다음 값을 등록합니다.
+
+| Secret | 용도 |
+|--------|------|
+| `SSH_IP` | 배포 서버 주소 |
+| `SSH_ID` | SSH 사용자 이름 |
+| `SSH_PASSWORD` | SSH 비밀번호 |
+| `SSH_PORT` | SSH 포트 |
+| `DATA_GO_KR_SERVICE_KEY` | 공공데이터 포털 서비스 키. workflow가 원격 셸의 환경 변수로 넘기고, 애플리케이션이 이어받습니다 |
+
+Gemini 키는 Secret이 아니라 서버의 `~/fly-schedule/.env`에 적어 둡니다(선택). `startup.sh`가 이 파일이 있으면 읽어 환경 변수로 내보냅니다.
+
+```bash
+# ~/fly-schedule/.env
+GOOGLE_GENAI_API_KEY=발급받은_Gemini_API_키
+```
+
+### deploy/startup.sh가 하는 일
+
+1. jar 파일(`~/fly-schedule/target/fly.jar`, 없으면 `~/fly-schedule/fly.jar`)과 `.env`를 읽고, `DATA_GO_KR_SERVICE_KEY`가 없으면 멈춥니다.
+2. 포트를 정합니다. 우선순위는 `SERVER_PORT` 환경 변수 → `startup.sh.orig`에 적힌 포트(`server.port=` 또는 `SERVER_PORT=`) → nginx 설정에서 `fly.java21.net`(`NGINX_SERVER_NAME`으로 변경 가능)을 넘기는 `proxy_pass` 포트(upstream 이름이면 그 upstream의 `server` 포트) → `8080`입니다. 고른 포트와 근거, 502 진단용 nginx 설정 일부를 로그에 출력합니다.
+3. 실행 중인 애플리케이션을 종료합니다. `app.pid`의 프로세스와 `fly.jar`를 실행 중인 java 프로세스에 종료 신호를 보내고, 30초 안에 끝나지 않으면 강제 종료합니다.
+4. `nohup`(Linux에서는 `setsid`도)으로 새로 시작합니다. `JAVA_OPTS` 기본값은 `-Xms512m -Xmx1024m`이고, 로그는 `~/fly-schedule/app.log`에 쌓입니다.
+5. 최대 90초 동안 `http://localhost:{포트}/`를 확인합니다. 응답이 오면 성공, 아니면 최근 로그 50줄을 출력하고 실패로 끝납니다.
+
+> **주의**
+> nginx가 바라보는 포트와 애플리케이션 포트가 다르면 502 Bad Gateway가 납니다. 배포 로그의 `[startup] 포트 ... (근거: ...)` 줄과 `[startup][nginx]` 줄을 먼저 확인하세요.
 
 ---
 
@@ -121,7 +177,7 @@ ollama pull qwen2.5:3b-instruct-q4_K_M
 
 ## 관련 문서
 
-- [교재 개요 (docs)](./docs/README.md)
+- [수업 안내 (docs)](./docs/README.md)
 - [공공데이터 포털 - 국내항공운항정보](https://www.data.go.kr/data/15098526/openapi.do)
 - [Spring AI 공식 문서](https://docs.spring.io/spring-ai/reference/)
 - [Anthropic, Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)

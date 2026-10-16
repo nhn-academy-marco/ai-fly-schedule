@@ -1,243 +1,120 @@
 # Step 1: Spring AI 환경 설정
 
+이 교재는 국내선 항공편 검색 서비스(flyschedule)를 만들면서 Spring AI로 LLM을 다루는 방법과, LLM을 쓰는 세 가지 검색 패턴(Coordinator 패턴, Tool Calling 에이전트, Orchestrator-Workers 패턴)을 배웁니다. Step 1은 그 출발점입니다.
+
+**이 Step에서 만들 것**: Ollama와 Gemini 두 LLM에 연결할 수 있도록 설정한 Spring Boot 애플리케이션을 실행하고, 브라우저에서 `http://localhost:8080` 화면이 열리는 것까지 확인합니다. 정상이라면 콘솔에 다음과 같은 로그가 보입니다.
+
+```text
+... Tomcat started on port 8080 (http) with context path '/'
+... Started FlyscheduleApplication in 3.512 seconds (process running for 3.9)
+```
+
 ## 학습 목표
 
-이 단계를 마치면 다음을 할 수 있습니다:
+이 Step을 마치면 다음을 할 수 있습니다.
 
-- Spring AI 의존성을 `pom.xml`에 추가하고 BOM으로 버전을 관리할 수 있습니다
-- `application.yml`을 통해 Ollama(로컬 LLM)와 Gemini(클라우드 LLM)를 설정할 수 있습니다
-- API 키를 환경 변수로 안전하게 관리할 수 있습니다
-- Spring AI 프로젝트를 실행하고 정상 동작을 확인할 수 있습니다
-
----
-
-> **핵심 개념**: Spring AI는 Spring Boot 애플리케이션에서 AI 모델(LLM)을 쉽게 사용할 수 있게 해주는 프레임워크입니다. 쉽게 말해, 데이터베이스에 연결할 때 `application.yml`에 DB 설정을 하듯이, AI 모델에 연결할 때도 `application.yml`에 설정만 하면 된다고 생각하면 됩니다. Spring이 JDBC로 데이터베이스를 추상화하듯, Spring AI는 ChatClient로 서로 다른 AI 모델들을 통일된 방식으로 사용할 수 있게 해줍니다.
+1. LLM, 토큰, 프롬프트, temperature 같은 기본 용어를 설명할 수 있다.
+2. `pom.xml`에 Spring AI BOM과 Ollama·Gemini 스타터를 추가할 수 있다.
+3. `application.yml`에 Ollama·Gemini 연결 설정과 타임아웃·재시도 설정을 작성하고, 각 값의 의미를 설명할 수 있다.
+4. API 키를 환경 변수로 주입하고, 키가 없을 때 애플리케이션이 어떻게 동작하는지 확인할 수 있다.
+5. 애플리케이션을 실행하고 로그와 화면으로 정상 기동을 확인할 수 있다.
 
 ---
 
 ## 전체 흐름
 
-이번 단계에서 구성할 환경의 전체 구조는 다음과 같습니다:
+`application.yml`에 적은 설정을 Spring AI의 자동 설정(Auto-Configuration)이 읽어 LLM 연결 객체(`ChatModel`)를 만듭니다. 이번 Step은 그림의 앞부분, 설정과 자동 설정까지를 다룹니다.
 
 ```text
-[application.yml 설정]
-       ↓
-[Spring AI 자동 설정 (Auto-Configuration)]
-       ↓
-┌──────────────────────────────────┐
-│     Spring 컨테이너 (IoC)        │
-│  ┌────────────┐  ┌────────────┐  │
-│  │ Ollama     │  │ Gemini     │  │
-│  │ ChatModel  │  │ ChatModel  │  │
-│  └────────────┘  └────────────┘  │
-└──────────────────────────────────┘
-       ↓
-[ChatClientConfig에서 ChatClient 빈 생성] (Step 2에서 학습)
-       ↓
-[Controller → Service → ChatClient → AI 모델 응답] (Step 2~4에서 학습)
+[pom.xml]  Spring AI BOM + 스타터 2개 (Ollama, Gemini)
+  ↓
+[application.yml]  spring.ai.ollama.* / spring.ai.google.genai.* / 환경 변수
+  ↓
+[Spring AI 자동 설정]
+  ↓
+[Spring 컨테이너]  ollamaChatModel, googleGenAiChatModel 빈
+  ↓
+[ChatClientConfig]  ChatClient 빈 생성                (Step 2)
+  ↓
+[컨트롤러 → 서비스 → ChatClient → LLM]              (Step 2~4)
 ```
 
 ---
 
-## LLM이란 무엇인가요?
+## LLM 기초 개념
 
-**LLM**(Large Language Model, 대규모 언어 모델)은 방대한 텍스트 데이터로 학습한 인공지능 모델입니다.
+### LLM이란?
 
-### LLM의 기본 개념
-
-**1. LLM이란 무엇인가?**
-
-```text
-일반적인 프로그램:  개발자가 규칙을 작성 → 프로그램이 규칙대로 동작
-LLM:              방대한 데이터로 학습 → 모델이 스스로 패턴을 학습
-
-예시:
-- "스프링이 뭐야?" → LLM이 학습한 데이터에서 스프링 관련 내용을 찾아 답변
-- "내일 광주에서 제주로 가는 항공편 알려줘" → LLM이 의도를 파악하고 응답
-```
-
-**2. LLM은 어떻게 동작하나요?**
+**LLM**(Large Language Model, 대규모 언어 모델)은 방대한 텍스트로 학습해, 주어진 입력 다음에 올 내용을 예측하며 문장을 만들어 내는 모델입니다. 일반 프로그램은 개발자가 작성한 규칙대로 동작하지만, LLM은 학습한 패턴으로 답을 만듭니다. 그래서 자연어를 유연하게 이해하는 대신, 같은 질문에도 답이 조금씩 달라지거나 사실이 아닌 내용을 지어낼 수 있습니다.
 
 ```text
 입력: "내일 광주에서 제주로 가는 항공편 알려줘"
   ↓
-토큰화 (Tokenization): ["내일", "광주", "에서", "제주", "로", "가는", "항공편", ...]
+토큰화: ["내일", "광주", "에서", "제주", "로", ...]
   ↓
-모델 처리: 각 토큰 사이의 관계를 분석하여 다음 토큰 예측
+모델: 앞의 토큰들을 보고 다음 토큰을 하나씩 예측
   ↓
-출력: "네, 내일 광주에서 제주로 가는 항공편은..."
+출력: "내일 광주에서 제주로 가는 항공편은 ..."
 ```
 
-**3. 주요 용어 설명**
+LLM은 실시간 항공편 데이터를 알지 못합니다. 이 프로젝트가 공공데이터 포털 API를 부르는 자바 코드(Tool)를 LLM에게 쥐여 주는 이유가 여기에 있습니다(Step 3).
 
-| 용어 | 설명 | 예시 |
+### 주요 용어
+
+| 용어 | 뜻 | 예 |
 |------|------|------|
-| **토큰 (Token)** | LLM이 처리하는 최소 단위 | "안녕하세요" → ["안녕", "하", "세요"] (약 3-4토큰) |
-| **프롬프트 (Prompt)** | LLM에게 전달하는 입력 | "스프링이 뭐야?" |
-| **컨텍스트 (Context)** | 대화의 맥락 정보 | 이전 대화 기록, 시스템 지시사항 |
-| **응답 (Completion)** | LLM이 생성하는 답변 | "스프링은 자바 프레임워크입니다..." |
+| 토큰(Token) | LLM이 처리하는 최소 단위. 비용과 길이 제한의 기준 | "안녕하세요" → 3~4토큰 |
+| 프롬프트(Prompt) | LLM에게 보내는 입력 전체 | 시스템 지시 + 사용자 질문 |
+| 컨텍스트 윈도우(Context Window) | 한 번에 넣을 수 있는 입력+출력 토큰의 최대 길이 | Ollama `num-ctx: 4096` |
+| 응답(Completion) | LLM이 만든 출력 | "내일 광주에서 ..." |
 
-### LLM의 파라미터 이해하기
+### 생성 옵션
 
-**Temperature (온도)**
+| 옵션 | 뜻 | 이 프로젝트의 값 |
+|------|------|------|
+| temperature | 답의 무작위성. 낮을수록 같은 입력에 비슷한 출력 | `0.0` (검색 조건 추출과 Tool 선택은 일관성이 중요) |
+| max tokens | 출력 토큰의 상한. 넘으면 답이 잘림 | `1024` |
+| top-k | 다음 토큰 후보를 확률 상위 k개로 제한 | `40` |
+| top-p | 누적 확률 p까지의 후보만 고려 | `0.9` |
 
-LLM의 창의성을 조절하는 파라미터입니다.
-
-```text
-Temperature = 0.0 (낮음)
-→ 항상 비슷한 답변 (결정적)
-→ 예: 질문에 대해 사실 위주의 답변
-→ 사용: 검색, 분류, Function Calling
-
-Temperature = 1.0 (높음)
-→ 매번 다른 답변 (창의적)
-→ 예: 창작, 아이디어 생성
-→ 사용: 블로그 글 작성, 스토리 생성
-```
-
-**Max Tokens (최대 토큰 수)**
-
-LLM이 생성할 수 있는 최대 토큰 수입니다.
-
-```text
-Max Tokens = 256
-→ 약 200글자 정도의 답변
-→ 사용: 간단한 질문-답변
-
-Max Tokens = 4096
-→ 약 3000글자 정도의 답변
-→ 사용: 장문의 설명, 코드 생성
-```
-
-**Top-P, Top-K**
-
-다음 토큰을 선택할 때 고려할 후보 수입니다.
-
-```text
-Top-K = 40: 상위 40개 후보 중에서 선택
-Top-P = 0.9: 누적 확률 90%까지 후보 고려
-
-일반적으로 기본값 사용 (Ollama 기본값: Top-K 40, Top-P 0.9)
-```
-
-### Spring에서 LLM 사용하기
-
-**Spring AI는 무엇을 해주나요?**
-
-```text
-┌─────────────────────────────────────────┐
-│  Spring 없이 LLM 사용                   │
-│  - 각 LLM 회사의 SDK를 직접 학습        │
-│  - OpenAI SDK, Gemini SDK, Ollama SDK   │
-│  - 코드 중복, 모델 교체 어려움          │
-└─────────────────────────────────────────┘
-
-↓ Spring AI 도입
-
-┌─────────────────────────────────────────┐
-│  Spring AI로 LLM 사용                   │
-│  - 통일된 API (ChatClient)              │
-│  - Spring Bean으로 LLM 관리             │
-│  - 설정 파일로 모델 전환                │
-│  - 익숙한 Spring 방식 그대로 사용       │
-└─────────────────────────────────────────┘
-```
-
-**Spring의 DI 컨테이너와 LLM**
-
-```java
-// 이미 알고 있는 Spring 방식
-@Service
-public class UserService {
-    private final UserRepository repo;  // DI로 주입
-}
-
-// Spring AI도 동일한 방식
-@Service
-public class ChatService {
-    private final ChatClient chatClient;  // DI로 주입
-}
-```
+temperature를 0으로 두어도 출력이 완전히 같다는 보장은 없습니다. 같은 입력에 "거의" 같은 출력이 나온다고 이해하세요.
 
 ---
 
 ## Spring AI란?
 
-**Spring AI**는 Spring 생태계에서 AI 모델(LLM)을 쉽게 사용할 수 있게 해주는 프레임워크입니다.
-
-### 왜 Spring AI인가?
-
-| 기존 방식 | Spring AI |
-|----------|-----------|
-| 각 LLM 제공자별 SDK를 직접 학습 | 통일된 API로 모든 LLM 사용 |
-| OpenAI SDK, Gemini SDK 등 중복 코드 | ChatClient 하나로 모두 해결 |
-| 모델 교체 시 코드 대폭 수정 | ChatModel만 교체하면 완료 |
-| 비즈니스 로직과 LLM 호출 코드 혼재 | Spring의 DI와 Advisor로 깔끔하게 분리 |
-
-### Spring AI의 기술적 배경
-
-**1. 추상화 계층 (Abstraction Layer)**
+**Spring AI**는 Spring 애플리케이션에서 여러 LLM을 같은 API로 쓰게 해 주는 프레임워크입니다. JDBC가 데이터베이스 종류를 감추듯, Spring AI는 LLM 제공자의 차이를 감춥니다.
 
 ```text
-┌─────────────────────────────────────────┐
-│         Spring AI Application           │
-├─────────────────────────────────────────┤
-│    ChatClient (통일된 인터페이스)       │
-├─────────────────────────────────────────┤
-│    ChatModel (추상화 계층)              │
-│  ┌────────┐  ┌────────┐  ┌────────┐     │
-│  │Ollama  │  │Gemini  │  │OpenAI  │     │
-│  │구현체  │  │구현체  │  │구현체  │     │
-│  └────────┘  └────────┘  └────────┘     │
-└─────────────────────────────────────────┘
+[서비스 코드]
+  ↓ 사용
+[ChatClient]   LLM과 대화하는 API (Step 2)
+  ↓ 위임
+[ChatModel]    제공자별 구현: OllamaChatModel, GoogleGenAiChatModel
+  ↓ HTTP
+[LLM 서버]     Ollama 서버, Google Gemini API
 ```
 
-**2. 종속성 주입 (Dependency Injection)**
+| 구성 요소 | 역할 | 처음 다루는 Step |
+|-----------|------|------------------|
+| ChatModel | 특정 LLM 제공자와 실제로 통신하는 객체. 스타터가 자동으로 빈을 만듦 | Step 1 |
+| ChatClient | 프롬프트를 조립하고 호출하는 API. 서비스는 이것만 사용 | Step 2 |
+| Tool / Function Calling | LLM이 자바 메서드 호출을 요청하게 하는 기능(`@Tool`) | Step 3 |
+| Advisor | ChatClient 요청·응답 앞뒤에 끼어드는 공통 처리(로깅 등) | Step 4 |
 
-Spring AI는 Spring Framework의 DI 컨테이너를 활용하여 LLM 관련 빈(Bean)을 관리합니다. 이로 인해 다음과 같은 이점을 얻습니다:
-
-- **느슨한 결합**: 구체적인 LLM 구현체에 의존하지 않음
-- **쉬운 테스트**: Mock ChatModel로 쉽게 테스트 가능
-- **환경별 설정**: 개발(로컬) vs 운영(클라우드) 쉽게 전환
-
-**3. Advisor와 Observability**
-
-Spring AI는 Spring AOP 프록시 대신 자체 메커니즘으로 공통 관심사를 처리합니다:
-
-- **Advisor**: ChatClient 요청/응답 전후에 끼어드는 체인입니다. `SimpleLoggerAdvisor`로 요청/응답을 로깅하거나, 직접 만든 Advisor로 공통 처리를 추가합니다 (Step 4에서 학습)
-- **Observability**: Micrometer Observation을 기반으로 ChatClient, ChatModel, Tool 호출의 실행 시간과 토큰 사용량을 메트릭·트레이스로 수집합니다 (Spring Boot Actuator와 함께 사용)
-
-### 핵심 기능
-
-| 기능 | 설명 |
-|------|------|
-| **ChatClient** | LLM과 대화하는 인터페이스 |
-| **ChatModel** | 다양한 LLM 제공자(Ollama, Gemini, OpenAI 등) 통합 |
-| **Function Calling** | LLM이 자바 메서드를 호출할 수 있게 함 |
-| **Advisor** | ChatClient 요청/응답 전후에 로깅·모니터링 같은 공통 로직 적용 |
-
-### Spring AI 1.1.4 특징
-
-- Spring Boot 3.4.x / 3.5.x 지원 (이 프로젝트는 3.5.11)
-- 공식 `@Tool`, `@ToolParam` 어노테이션 제공
-- 다중 LLM 동시 사용 가능
-- `CallAdvisor`/`StreamAdvisor` 기반 Advisor API로 요청/응답 가로채기 지원
+모델을 바꿔도 서비스 코드는 `ChatClient`만 보므로 거의 바뀌지 않습니다. 이 프로젝트는 Spring Boot 3.5.11과 Spring AI 1.1.4, Java 21을 사용합니다.
 
 ---
 
 ## Step 1-1: pom.xml 설정
 
-### 왜 이렇게 할까요?
+### 왜 필요한가
 
-Spring Boot 프로젝트에서 새로운 기능을 추가할 때 가장 먼저 하는 일이 무엇인지 떠올려 보세요. 바로 `pom.xml`에 의존성을 추가하는 것입니다. JPA를 쓸 때 `spring-boot-starter-data-jpa`를 추가하듯, AI 기능을 쓸 때도 `spring-ai-starter` 의존성을 추가해야 합니다.
+JPA를 쓰려면 `spring-boot-starter-data-jpa`를 추가하듯, LLM을 쓰려면 Spring AI 스타터를 추가해야 합니다. Spring AI는 모듈이 여러 개이므로 **BOM**(Bill of Materials, 여러 의존성의 버전을 한곳에서 정하는 목록)으로 버전을 맞춥니다.
 
-Spring AI 1.1.4는 정식 릴리스(GA) 버전이므로 Maven 중앙 저장소에서 바로 내려받을 수 있습니다. 또한 Spring AI는 여러 모듈(Ollama, Gemini 등)로 구성되어 있어, BOM(Bill of Materials)으로 버전을 한 곳에서 관리하는 것이 좋습니다.
+### 어떻게 하는가
 
-> **Spring Boot 복습**: BOM(Bill of Materials)은 여러 의존성의 버전을 한 번에 관리하는 방법입니다. Spring Boot에서도 `spring-boot-dependencies` BOM을 사용하여 수십 개의 의존성 버전을 통일합니다. Spring AI도 동일한 방식으로 버전을 관리합니다.
-
-### Spring AI BOM(Bill of Materials) 추가
-
-Spring AI는 BOM을 통해 모든 모듈의 버전을 관리합니다. `pom.xml`의 `<properties>`와 `<dependencyManagement>`에 추가:
+파일: `pom.xml`
 
 ```xml
 <properties>
@@ -258,338 +135,51 @@ Spring AI는 BOM을 통해 모든 모듈의 버전을 관리합니다. `pom.xml`
 </dependencyManagement>
 ```
 
-### (선택) Spring Milestone Repository 추가
-
-1.1.4 같은 정식 릴리스는 Maven 중앙 저장소에서 받으므로 이 설정이 필요 없습니다(실제 프로젝트의 `pom.xml`에도 없습니다). Milestone(M)이나 RC 버전을 사용할 때만 다음 저장소를 추가합니다:
-
-```xml
-<repositories>
-    <repository>
-        <id>spring-milestones</id>
-        <name>Spring Milestones</name>
-        <url>https://repo.spring.io/milestone</url>
-        <snapshots>
-            <enabled>false</enabled>
-        </snapshots>
-    </repository>
-</repositories>
-```
-
-### Ollama 의존성 추가
+`<dependencies>`에는 두 스타터를 추가합니다. BOM이 버전을 정하므로 `<version>`은 적지 않습니다.
 
 ```xml
 <dependency>
     <groupId>org.springframework.ai</groupId>
     <artifactId>spring-ai-starter-model-ollama</artifactId>
 </dependency>
-```
 
-### Google GenAI (Gemini) 의존성 추가
-
-```xml
 <dependency>
     <groupId>org.springframework.ai</groupId>
     <artifactId>spring-ai-starter-model-google-genai</artifactId>
 </dependency>
 ```
 
+**코드 읽기**
+
+- `spring-ai-bom`을 `import` 범위로 넣으면 Spring AI 모듈 전체가 1.1.4로 맞춰집니다.
+- `spring-ai-starter-model-ollama`는 `OllamaChatModel`을, `spring-ai-starter-model-google-genai`는 `GoogleGenAiChatModel`을 자동으로 빈으로 만듭니다.
+- `<spring-ai.version>` 속성은 현재 `pom.xml`에서 직접 참조하지 않습니다. BOM의 `<version>`에 `${spring-ai.version}`을 쓰면 버전을 한 곳에서 바꿀 수 있습니다.
+
+> **팁**: 1.1.4 같은 정식(GA) 버전은 Maven 중앙 저장소에서 받으므로 별도 저장소 설정이 필요 없습니다. Milestone(M)이나 RC 버전을 쓸 때만 `https://repo.spring.io/milestone` 저장소를 `<repositories>`에 추가합니다.
+
+### 확인하기
+
+```bash
+./mvnw dependency:tree | grep spring-ai-starter
+```
+
+`spring-ai-starter-model-ollama:jar:1.1.4`와 `spring-ai-starter-model-google-genai:jar:1.1.4`가 보이면 성공입니다.
+
+> **주의**: 저장소에 Maven Wrapper(`mvnw`, `.mvn/`)가 포함되어 있지 않으면 `./mvnw`가 없다는 오류가 납니다. 이때는 설치된 Maven의 `mvn` 명령으로 바꿔 실행하거나, `mvn wrapper:wrapper`로 Wrapper를 만든 뒤 진행하세요. 이 교재의 `./mvnw` 명령은 모두 `mvn`으로 바꿔 써도 됩니다.
+
 ---
 
 ## Step 1-2: Ollama 설정
 
-### 왜 이렇게 할까요?
+### 왜 필요한가
 
-지금까지 `application.yml`에 데이터베이스 연결 정보를 설정해 본 적이 있을 것입니다. AI 모델도 데이터베이스와 마찬가지로 "어떤 서버에 연결할지"와 "어떤 설정으로 사용할지"를 `application.yml`에 적어야 합니다. Ollama는 무료로 로컬에서 실행할 수 있는 LLM이므로, 개발 단계에서 테스트하기에 적합합니다.
+**Ollama**는 LLM을 내 컴퓨터나 사내 서버에서 실행하는 오픈소스 도구입니다. 사용료가 없어 실습과 개발에 알맞습니다. 데이터베이스를 쓸 때 `spring.datasource.url`로 접속 주소를 알려 주듯, Ollama도 "어느 서버에, 어떤 모델로, 어떤 옵션으로" 접속할지 `application.yml`에 적어야 합니다.
 
-> **Spring Boot 복습**: Spring Boot의 자동 설정(Auto-Configuration)은 `application.yml`에 작성된 설정값을 읽어서 필요한 Bean을 자동으로 생성합니다. 예를 들어 `spring.datasource.url`을 적으면 `DataSource` Bean이 자동 생성되듯, Ollama 스타터가 클래스패스에 있으면 `spring.ai.ollama.*` 설정값(예: `base-url`, 기본값 `http://localhost:11434`)으로 `OllamaChatModel` Bean이 자동 생성됩니다.
+### 어떻게 하는가
 
-### Ollama란?
-
-**Ollama**는 로컬 컴퓨터에서 LLM을 실행할 수 있는 오픈소스 도구입니다.
-
-| 특징 | 설명 |
-|------|------|
-| **비용** | 무료 |
-| **속도** | 느림 (30~60초) |
-| **용도** | 개발, 테스트 |
-| **모델** | Llama, Qwen, Mistral 등 |
-
-### application.yml 설정
-
-Spring을 공부하신 분이라면 `application.yml`이 익숙하실 겁니다. LLM 설정도 동일한 방식으로 합니다.
+파일: `src/main/resources/application.yml`
 
 ```yaml
-spring.ai.ollama:
-  base-url: http://ollama.java21.net  # Ollama 서버 주소
-  chat:
-    options:
-      model: qwen2.5:3b-instruct-q4_K_M  # 사용할 모델 (양자화된 Qwen 2.5 3B)
-      temperature: 0.0                    # 응답 일관성
-      max-tokens: 1024                    # 최대 출력 토큰 수 (Ollama의 num_predict)
-      num-thread: 4                       # 스레드 수
-      num-ctx: 4096                       # 컨텍스트 윈도우 크기 (Tool 7개 설명과 결과가 들어가도록)
-      top-p: 0.9                          # Nucleus sampling
-      top-k: 40                           # 상위 K 후보 고려
-      keep-alive: 10m                     # 모델 유지 시간
-```
-
-### 설정 항목 상세 설명
-
-**1. base-url (Ollama 서버 주소)**
-
-```yaml
-base-url: http://ollama.java21.net
-```
-
-- **의미**: Ollama LLM 서버의 주소
-- **로컬 사용**: `http://localhost:11434`
-- **원격 사용**: `http://ollama.java21.net` (프로젝트에서 사용)
-- **Spring 설정과의 비교**:
-  ```yaml
-  # 데이터베이스 설정
-  spring:
-    datasource:
-      url: jdbc:mysql://localhost:3306/mydb
-
-  # Ollama 설정 (비슷한 구조!)
-  spring:
-    ai:
-      ollama:
-        base-url: http://localhost:11434
-  ```
-
-**2. model (사용할 모델)**
-
-```yaml
-model: qwen2.5:3b-instruct-q4_K_M
-```
-
-- **의미**: 사용할 LLM 모델 이름
-- **Qwen 2.5**: 중국어, 한국어에 강한 오픈소스 모델
-- **3b**: 3B(30억) 파라미터 모델
-- **instruct**: Instruction 튜닝이 적용된 모델
-- **q4_K_M**: 4비트 양자화(K-Quant Medium)로 메모리 사용량 최적화
-- **다른 모델 예시**:
-  - `llama3.2`: Meta의 Llama 모델
-  - `mistral`: Mistral AI의 모델
-
-**3. temperature (응답 창의성)**
-
-```yaml
-temperature: 0.0
-```
-
-- **범위**: 0.0 ~ 2.0
-- **0.0에 가까울수록**: 항상 비슷한 답변 (결정적)
-- **2.0에 가까울수록**: 매번 다른 답변 (창의적)
-- **추천 설정**:
-  - Function Calling: `0.0` (일관된 결과 필요)
-  - 질문-답변: `0.7` (적절한 균형)
-  - 창작: `1.0+` (창의적 응답)
-
-### 파라미터 설명
-
-| 파라미터 | 값 | 설명 |
-|----------|-----|------|
-| `base-url` | `http://ollama.java21.net` | Ollama 서버 주소 (로컬: `http://localhost:11434`) |
-| `model` | `qwen2.5:3b-instruct-q4_K_M` | Qwen 2.5 3B 양자화 모델 (한국어 지원 우수) |
-| `temperature` | `0.0` | 결정적 응답 (0.0~2.0, 낮을수록 일관적) |
-| `max-tokens` | `1024` | 최대 출력 토큰 수 (`num-predict`와 같은 값) |
-| `num-thread` | `4` | Ollama 실행 스레드 수 |
-| `num-ctx` | `4096` | 컨텍스트 윈도우 크기 (토큰 수). Tool 7개의 설명과 Tool 결과가 함께 들어가야 하므로 넉넉하게 둠 |
-| `top-p` | `0.9` | 누적 확률 분포 상위 90%만 고려 |
-| `top-k` | `40` | 다음 토큰 후보 상위 40개만 고려 |
-| `keep-alive` | `10m` | 모델 메모리 유지 시간 (10분) |
-
-### 타임아웃과 재시도 설정
-
-`spring.ai.ollama.chat.options`에는 `timeout` 항목이 없습니다. 작은 모델이라도 응답에 수십 초가 걸릴 수 있으므로, 이 프로젝트는 Spring Boot의 HTTP 클라이언트 설정으로 읽기 타임아웃을 늘립니다. 이 값은 Spring Boot가 자동 설정한 `RestClient.Builder`로 만든 클라이언트에 적용됩니다. Ollama 호출과, 공공데이터 포털을 부르는 `ApiClientService`가 모두 여기에 해당합니다. (`ApiClientService`가 `RestClient.create()` 대신 생성자로 `RestClient.Builder`를 주입받는 이유입니다. `RestClient.create()`로 직접 만들면 이 설정이 적용되지 않습니다. Step 6 참고)
-
-```yaml
-spring:
-  # LLM 응답이 느릴 수 있으므로 HTTP 클라이언트 읽기 타임아웃을 5분으로 늘린다 (Ollama·RestClient 공통)
-  http:
-    client:
-      read-timeout: 300s
-```
-
-Spring AI는 LLM 호출이 실패하면 자동으로 다시 시도합니다. 기본값은 최대 10회, 대기 간격을 5배씩 늘리는 방식이라 LLM 서버가 꺼져 있으면 응답이 수십 분 동안 멈출 수 있습니다. 실습에서는 실패를 빨리 확인하는 편이 낫기 때문에 재시도 횟수와 간격을 줄였습니다.
-
-```yaml
-# Spring AI 재시도 설정
-spring.ai.retry:
-  max-attempts: 2          # 최대 2회 시도
-  backoff:
-    initial-interval: 1s   # 첫 재시도 대기 시간
-    max-interval: 5s       # 최대 대기 시간
-```
-
----
-
-## Step 1-3: Gemini 설정
-
-### 왜 이렇게 할까요?
-
-Ollama는 무료이지만 응답 속도가 느립니다(30~60초). 실제 서비스에서는 사용자가 1분을 기다릴 수 없습니다. Google Gemini는 클라우드 기반 LLM으로 3~5초 만에 응답하여 운영 환경에 적합합니다. 두 가지 LLM을 모두 설정해 두면, 개발할 때는 Ollama를, 실제 서비스에서는 Gemini를 선택적으로 사용할 수 있습니다.
-
-### Google GenAI API란?
-
-**Google Gemini**는 Google의 클라우드 기반 LLM 서비스입니다.
-
-| 특징 | 설명 |
-|------|------|
-| **비용** | 유료 (저렴) |
-| **속도** | 빠름 (3~5초) |
-| **용도** | 실시간 검색, 운영 환경 |
-| **모델** | gemini-2.5-flash, gemini-2.5-pro |
-
-### API 키 발급
-
-1. [Google AI Studio](https://aistudio.google.com/app/apikey) 접속
-2. **Create API Key** 클릭
-3. 프로젝트 선택 또는 생성
-4. 발급된 키 복사
-
-> **보안 주의**: API 키를 GitHub에 커밋하지 마세요!
-
-### application.yml 설정
-
-```yaml
-spring:
-  ai:
-    google:
-      genai:
-        # 환경 변수에서 읽음. 없으면 "not-set"을 넣어 앱이 그대로 시작되게 한다
-        api-key: ${GOOGLE_GENAI_API_KEY:not-set}
-        chat:
-          options:
-            model: gemini-2.5-flash       # Gemini 2.5 Flash 모델
-            temperature: 0.0              # 결정적 응답
-            max-output-tokens: 1024       # 최대 출력 토큰 수 (계획 JSON과 답변이 잘리지 않도록)
-            top-p: 0.9                    # Nucleus sampling
-            top-k: 40                     # 상위 K 후보 고려
-```
-
-### 파라미터 상세 설명
-
-| 파라미터 | 값 | 설명 | 범위 |
-|----------|-----|------|------|
-| `model` | `gemini-2.5-flash` | 빠르고 저렴한 모델 | `gemini-2.5-flash`, `gemini-2.5-pro` |
-| `temperature` | `0.0` | 응답의 일관성 (0=결정적, 2=창의적) | `0.0` ~ `2.0` |
-| `max-output-tokens` | `1024` | 최대 출력 토큰 수 (영어 기준 1토큰≈4글자, 한국어는 더 적음) | 모델별 상한 (2.5 Flash는 최대 65,536) |
-| `top-p` | `0.9` | 누적 확률 분포 상위 90%만 고려 | `0.0` ~ `1.0` |
-| `top-k` | `40` | 다음 토큰 후보 상위 40개만 고려 | 1 이상 (모델별 기본값 다름) |
-
-> **기본값을 `not-set`으로 둔 이유**: API 키가 비어 있으면 Gemini 자동 설정이 빈을 만들지 못해 애플리케이션이 시작되지 않을 수 있습니다. 이 프로젝트는 Gemini 키가 없어도 Ollama만으로 실습할 수 있도록 `not-set`이라는 자리표시 값을 넣습니다. 화면에서 Gemini를 선택하면 `ChatClientProvider`가 이 값을 보고 "Gemini API 키가 설정되지 않았습니다. 환경 변수 GOOGLE_GENAI_API_KEY를 설정하거나 Ollama를 선택하세요."라는 안내를 돌려줍니다. (Step 2에서 다룹니다.)
-
-### Temperature 값에 따른 동작
-
-| 값 | 동작 | 사용 사례 |
-|----|------|-----------|
-| `0.0` ~ `0.3` | 같은 입력에 거의 같은 출력 (완전히 같다는 보장은 없음) | 검색, 분류, Function Calling |
-| `0.4` ~ `0.7` | 균형 잡힌 창의성 | 대화, 질문-답변 |
-| `0.8` ~ `2.0` | 창의적이고 무작위적 | 창작, 아이디어 생성 |
-
----
-
-## Step 1-4: 환경 변수로 API 키 관리
-
-### 왜 이렇게 할까요?
-
-`application.yml`에 API 키를 직접 적으면 어떻게 될까요? GitHub에 코드를 올릴 때 API 키가 함께 공개되어 누구나 내 계정으로 Gemini를 사용할 수 있게 됩니다. 이를 방지하기 위해 API 키는 환경 변수로 관리합니다. `application.yml`에서 `${GOOGLE_GENAI_API_KEY:not-set}`처럼 작성하면, Spring이 실행될 때 환경 변수에서 값을 읽어 옵니다. 콜론(`:`) 뒤는 환경 변수가 없을 때의 기본값으로, 실제 키는 파일에 남지 않습니다.
-
-이 프로젝트에서 쓰는 환경 변수는 두 가지입니다.
-
-| 환경 변수 | 필수 여부 | 용도 | 없을 때 |
-|-----------|-----------|------|---------|
-| `DATA_GO_KR_SERVICE_KEY` | 필수 | 공공데이터 포털 국내 항공 운항 정보 API 키 | 앱은 정상 시작, 항공편 조회 시 "공공데이터 포털 서비스 키가 설정되지 않았습니다…" 안내 (`${DATA_GO_KR_SERVICE_KEY:}` → 빈 값) |
-| `GOOGLE_GENAI_API_KEY` | 선택 | Gemini API 키 | 앱은 정상 시작, Gemini 선택 시 안내 메시지 표시 |
-
-> **Spring Boot 복습**: `${...}` 문법은 Spring의 프로퍼티 플레이스홀더(placeholder)입니다. `spring.datasource.password`를 `${DB_PASSWORD}`로 설정해 본 적이 있을 것입니다. API 키도 동일한 방식으로 환경 변수에서 주입합니다.
-
-### 방법 1: 터미널 (macOS/Linux)
-
-```bash
-export GOOGLE_GENAI_API_KEY=your-api-key
-export DATA_GO_KR_SERVICE_KEY=your-service-key   # 공공데이터 포털 항공편 API 키
-./mvnw spring-boot:run
-```
-
-### 방법 2: PowerShell (Windows)
-
-```powershell
-$env:GOOGLE_GENAI_API_KEY="your-api-key"
-$env:DATA_GO_KR_SERVICE_KEY="your-service-key"
-.\mvnw.cmd spring-boot:run
-```
-
-### 방법 3: IntelliJ IDEA
-
-1. **Run** > **Edit Configurations**
-2. **Environment Variables** 필드에:
-   ```text
-   GOOGLE_GENAI_API_KEY=your-api-key;DATA_GO_KR_SERVICE_KEY=your-service-key
-   ```
-
-### 방법 4: .env 파일 (권장)
-
-프로젝트 루트에 `.env` 파일 생성:
-
-```bash
-GOOGLE_GENAI_API_KEY=your-api-key
-DATA_GO_KR_SERVICE_KEY=your-service-key
-```
-
-> Spring Boot는 `.env` 파일을 자동으로 읽지 않습니다. `application.yml`에 `spring.config.import: optional:file:.env[.properties]`를 추가하거나, IDE의 EnvFile 플러그인 등을 함께 사용하세요.
-
-**.gitignore에 추가:**
-
-```text
-.env
-```
-
----
-
-## Step 1-5: 설정 확인
-
-### 전체 application.yml 예시
-
-프로젝트의 `src/main/resources/application.yml` 전체입니다.
-
-```yaml
-spring:
-  application:
-    name: flyschedule
-  output:
-    ansi:
-      enabled: always
-
-  # LLM 응답이 느릴 수 있으므로 HTTP 클라이언트 읽기 타임아웃을 5분으로 늘린다 (Ollama·RestClient 공통)
-  http:
-    client:
-      read-timeout: 300s
-
-server:
-  port: 8080
-  # 서버 타임아웃 설정 (5분)
-  tomcat:
-    connection-timeout: 300000
-    keep-alive-timeout: 300000
-
-# 공공데이터 포털 API 설정
-data-go-kr:
-  api:
-    url: https://apis.data.go.kr/1613000/DmstcFlightNvgInfo
-    service-key: ${DATA_GO_KR_SERVICE_KEY:}
-
-# Spring AI 재시도 설정
-# 기본값(최대 10회, 대기 간격 5배씩 증가)은 LLM 서버가 꺼져 있을 때 응답이 수십 분 멈추므로 실습용으로 줄인다
-spring.ai.retry:
-  max-attempts: 2
-  backoff:
-    initial-interval: 1s
-    max-interval: 5s
-
 # Spring AI Ollama 설정
 spring.ai.ollama:
   base-url: http://ollama.java21.net
@@ -604,8 +194,78 @@ spring.ai.ollama:
       top-p: 0.9
       top-k: 40
       keep-alive: 10m
+```
 
+**코드 읽기**
 
+| 설정 | 값 | 의미 |
+|------|-----|------|
+| `base-url` | `http://ollama.java21.net` | 실습용 원격 Ollama 서버. 내 컴퓨터에서 실행하면 `http://localhost:11434`(기본값) |
+| `model` | `qwen2.5:3b-instruct-q4_K_M` | Qwen 2.5, 30억(3B) 파라미터, 지시 따르기 학습(instruct), 4비트 양자화(q4_K_M)로 메모리를 줄인 모델 |
+| `temperature` | `0.0` | 같은 입력에 최대한 같은 출력 |
+| `max-tokens` | `1024` | 출력 토큰 상한 (Ollama의 `num_predict`) |
+| `num-thread` | `4` | Ollama가 쓸 CPU 스레드 수 |
+| `num-ctx` | `4096` | 컨텍스트 윈도우. Tool 7개의 설명과 Tool 결과가 함께 들어가야 해서 늘렸음 |
+| `top-p`, `top-k` | `0.9`, `40` | 다음 토큰 후보 제한 |
+| `keep-alive` | `10m` | 마지막 요청 뒤 모델을 메모리에 유지하는 시간 |
+
+`spring.ai.ollama:`처럼 점으로 이은 키는 `spring:` → `ai:` → `ollama:`로 중첩해 쓴 것과 같습니다.
+
+### 타임아웃과 재시도
+
+작은 모델이라도 응답에 수십 초가 걸릴 수 있습니다. `spring.ai.ollama.chat.options`에는 타임아웃 항목이 없으므로, Spring Boot의 HTTP 클라이언트 설정으로 읽기 타임아웃을 늘립니다.
+
+```yaml
+spring:
+  # LLM 응답이 느릴 수 있으므로 HTTP 클라이언트 읽기 타임아웃을 5분으로 늘린다 (Ollama·RestClient 공통)
+  http:
+    client:
+      read-timeout: 300s
+```
+
+이 값은 Spring Boot가 자동 설정한 `RestClient.Builder`로 만든 클라이언트에만 적용됩니다. Ollama 호출과, 공공데이터 포털을 부르는 `ApiClientService`가 여기에 해당합니다. `ApiClientService`가 `RestClient.create()` 대신 생성자로 `RestClient.Builder`를 주입받는 이유입니다(Step 6).
+
+Spring AI는 LLM 호출이 실패하면 자동으로 다시 시도합니다. 기본값(최대 10회, 대기 간격이 점점 늘어남)으로는 LLM 서버가 꺼져 있을 때 응답이 수십 분 멈출 수 있어, 실습에 맞게 줄였습니다.
+
+```yaml
+# Spring AI 재시도 설정
+# 기본값(최대 10회, 대기 간격 5배씩 증가)은 LLM 서버가 꺼져 있을 때 응답이 수십 분 멈추므로 실습용으로 줄인다
+spring.ai.retry:
+  max-attempts: 2
+  backoff:
+    initial-interval: 1s
+    max-interval: 5s
+```
+
+### 확인하기
+
+Ollama 서버가 응답하는지, 모델이 준비되어 있는지 확인합니다.
+
+```bash
+curl http://ollama.java21.net/api/tags
+```
+
+응답 JSON의 `models` 목록에 `qwen2.5:3b-instruct-q4_K_M`이 있으면 됩니다. 내 컴퓨터에서 Ollama를 쓴다면 `ollama pull qwen2.5:3b-instruct-q4_K_M`으로 모델을 내려받고 `base-url`을 `http://localhost:11434`로 바꿉니다.
+
+---
+
+## Step 1-3: Gemini 설정
+
+### 왜 필요한가
+
+작은 Ollama 모델은 무료지만 느리고, 여러 단계를 계획하거나 Tool을 고르는 판단이 약합니다. **Gemini**는 Google의 클라우드 LLM으로, 빠르고 판단이 안정적입니다. 두 모델을 모두 설정해 두면 화면에서 요청마다 모델을 골라 결과와 속도를 비교할 수 있습니다.
+
+### API 키 발급
+
+1. [Google AI Studio](https://aistudio.google.com/app/apikey)에 접속합니다.
+2. **Create API Key**를 누르고 프로젝트를 고릅니다.
+3. 발급된 키를 복사해 둡니다. 키는 다음 절에서 환경 변수로 넘깁니다.
+
+### 어떻게 하는가
+
+파일: `src/main/resources/application.yml`
+
+```yaml
 # Spring AI Google GenAI 설정 (Gemini)
 spring.ai.google:
   genai:
@@ -621,177 +281,240 @@ spring.ai.google:
         top-k: 40
 ```
 
-> **Ollama 서버 주소**: 기본값 `http://ollama.java21.net`은 실습용 원격 서버입니다. 내 컴퓨터에서 Ollama를 실행하려면 `base-url`을 `http://localhost:11434`로 바꾸고 `ollama pull qwen2.5:3b-instruct-q4_K_M`으로 모델을 내려받으세요.
+**코드 읽기**
 
-### 프로젝트 실행 및 확인
+- `api-key: ${GOOGLE_GENAI_API_KEY:not-set}`: 환경 변수 `GOOGLE_GENAI_API_KEY`를 읽고, 없으면 `not-set`을 넣습니다.
+- `model: gemini-2.5-flash`: 빠르고 저렴한 Gemini 모델입니다. 더 정확한 `gemini-2.5-pro`도 있습니다.
+- `max-output-tokens: 1024`: Gemini는 출력 상한 옵션 이름이 Ollama(`max-tokens`)와 다릅니다. Orchestrator-Workers 패턴의 작업 계획(JSON)이 잘리지 않을 만큼 둡니다(Step 11).
+
+키가 비어 있으면 Gemini 자동 설정이 빈을 만들지 못해 애플리케이션이 시작되지 않을 수 있습니다. 그래서 `not-set`이라는 자리표시 값을 넣어 키 없이도 Ollama만으로 실습할 수 있게 했습니다. 화면에서 Gemini를 고르면 `ChatClientProvider`(Step 2)가 이 값을 보고 다음 안내를 돌려줍니다.
+
+```text
+Gemini API 키가 설정되지 않았습니다. 환경 변수 GOOGLE_GENAI_API_KEY를 설정하거나 Ollama를 선택하세요.
+```
+
+### 확인하기
+
+키를 설정했다면 Google API가 키를 받아 주는지 직접 확인할 수 있습니다.
 
 ```bash
-./mvnw clean install
+curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GOOGLE_GENAI_API_KEY" | head -20
+```
+
+모델 목록이 나오면 키가 유효합니다. `API key not valid` 오류가 나오면 키를 다시 확인하세요.
+
+---
+
+## Step 1-4: 환경 변수로 API 키 관리
+
+### 왜 필요한가
+
+`application.yml`에 키를 직접 적으면 GitHub에 코드를 올릴 때 키도 함께 공개됩니다. 그러면 누구나 내 계정으로 API를 쓸 수 있습니다. 그래서 키는 파일 대신 환경 변수로 넘깁니다. `${이름:기본값}`은 Spring의 프로퍼티 플레이스홀더(placeholder)로, 실행할 때 환경 변수 값으로 바뀌고 콜론 뒤는 값이 없을 때의 기본값입니다.
+
+이 프로젝트가 쓰는 환경 변수는 두 개입니다.
+
+| 환경 변수 | 필수 여부 | 용도 | 없을 때 |
+|-----------|-----------|------|---------|
+| `DATA_GO_KR_SERVICE_KEY` | 필수 | 공공데이터 포털 국내 항공 운항 정보 API 서비스 키 | 앱은 시작됨. 항공편을 조회할 때 "공공데이터 포털 서비스 키가 설정되지 않았습니다. 환경 변수 DATA_GO_KR_SERVICE_KEY를 설정하세요." |
+| `GOOGLE_GENAI_API_KEY` | 선택 | Gemini API 키 | 앱은 시작됨. Gemini를 고르면 안내 메시지 |
+
+`DATA_GO_KR_SERVICE_KEY`는 `application.yml`의 `data-go-kr.api.service-key: ${DATA_GO_KR_SERVICE_KEY:}`로 읽습니다. 키 발급 방법은 Step 6에서 다룹니다.
+
+### 어떻게 하는가
+
+**macOS/Linux 터미널**
+
+```bash
+export DATA_GO_KR_SERVICE_KEY=your-service-key
+export GOOGLE_GENAI_API_KEY=your-api-key   # 선택
 ./mvnw spring-boot:run
 ```
 
-**콘솔에서 다음 로그 확인:**
-```text
-Started FlyscheduleApplication in X.XXX seconds
-Tomcat started on port(s): 8080 (http)
+**Windows PowerShell**
+
+```powershell
+$env:DATA_GO_KR_SERVICE_KEY="your-service-key"
+$env:GOOGLE_GENAI_API_KEY="your-api-key"
+.\mvnw.cmd spring-boot:run
 ```
 
-브라우저에서 `http://localhost:8080`을 열면 세 가지 검색 패턴을 비교하는 화면이 나타납니다. 아직 LLM을 호출하는 코드를 배우지 않았으므로, 이 단계에서는 애플리케이션이 오류 없이 시작되는 것까지만 확인하면 됩니다.
+**IntelliJ IDEA**: **Run > Edit Configurations**의 **Environment variables**에 다음처럼 적습니다.
+
+```text
+DATA_GO_KR_SERVICE_KEY=your-service-key;GOOGLE_GENAI_API_KEY=your-api-key
+```
+
+**.env 파일**: 프로젝트 루트에 `.env`를 만들고 `이름=값` 형식으로 적습니다. Spring Boot는 `.env`를 자동으로 읽지 않으므로 `application.yml`에 `spring.config.import: optional:file:.env[.properties]`를 추가해야 합니다.
+
+```properties
+DATA_GO_KR_SERVICE_KEY=your-service-key
+GOOGLE_GENAI_API_KEY=your-api-key
+```
+
+> **주의**: 현재 `.gitignore`에는 `.env`가 들어 있지 않습니다. `.env`를 쓴다면 먼저 `.gitignore`에 `.env` 한 줄을 추가한 뒤 파일을 만드세요.
+
+배포 서버에서도 같은 방식을 씁니다. GitHub Actions 워크플로(`.github/workflows/maven.yml`)가 GitHub Secrets의 `DATA_GO_KR_SERVICE_KEY`를 서버에 환경 변수로 넘기고, `deploy/startup.sh`가 서버의 `~/fly-schedule/.env`에서 선택 값(`GOOGLE_GENAI_API_KEY` 등)을 읽은 뒤 애플리케이션을 실행합니다. 키는 어디에도 파일로 커밋되지 않습니다.
+
+### 확인하기
+
+```bash
+echo $DATA_GO_KR_SERVICE_KEY
+```
+
+값이 출력되면 같은 터미널에서 실행한 애플리케이션이 그 값을 받습니다. 환경 변수는 설정한 터미널(또는 실행 구성)에만 적용된다는 점에 주의하세요.
 
 ---
 
-## Ollama vs Gemini 비교
+## Step 1-5: 실행과 확인
 
-| 항목 | Ollama (Qwen 2.5) | Gemini (2.5 Flash) |
-|------|------------------|-------------------|
-| **속도** | 느림 (30~60초) | 빠름 (3~5초) |
-| **비용** | 무료 | 유료 (저렴) |
-| **안정성** | 중간 | 높음 |
-| **한국어** | 우수 | 우수 |
-| **추천 용도** | 개발, 테스트 | 실시간 검색, 운영 |
+### 어떻게 하는가
+
+전체 설정은 `src/main/resources/application.yml`에 있습니다. 앞에서 본 블록 외에 서버 포트(`server.port: 8080`), Tomcat 타임아웃, 공공데이터 포털 주소(`data-go-kr.api.url`)가 들어 있습니다. 파일을 열어 각 블록이 어느 절의 내용인지 짚어 보세요.
+
+```bash
+./mvnw clean package -DskipTests
+./mvnw spring-boot:run
+```
+
+### 확인하기
+
+1. 콘솔에 `Tomcat started on port 8080`과 `Started FlyscheduleApplication`이 차례로 나오는지 확인합니다.
+2. 브라우저에서 `http://localhost:8080`을 엽니다. 세 가지 검색 패턴을 비교하는 화면이 나오면 성공입니다.
+3. Gemini 키 없이 실행했다면, Gemini를 골랐을 때의 안내를 API로 확인해 봅니다. 영어 문장은 정규식으로 처리되지 않아 LLM이 필요하므로 키 검사가 바로 일어납니다(Step 2에서 자세히 다룹니다).
+
+```bash
+curl -X POST http://localhost:8080/api/search/coordinator \
+  -H "Content-Type: application/json" \
+  -d '{"message": "flights from Gwangju to Jeju tomorrow", "model": "gemini"}'
+```
+
+```json
+{
+  "pattern": "coordinator",
+  "success": false,
+  "message": "Gemini API 키가 설정되지 않았습니다. 환경 변수 GOOGLE_GENAI_API_KEY를 설정하거나 Ollama를 선택하세요.",
+  "results": [],
+  "trace": [
+    { "order": 1, "kind": "CODE", "actor": "SearchCriteriaExtractor", "title": "검색 조건 추출", "detail": "실패: Gemini API 키가 설정되지 않았습니다. ...", ... }
+  ],
+  "elapsedMs": 3
+}
+```
 
 ---
 
-## Spring AI 아키텍처 이해
+## Ollama와 Gemini 비교
 
-### ChatClient와 ChatModel의 관계
+| 항목 | Ollama (qwen2.5 3B) | Gemini (2.5 Flash) |
+|------|---------------------|--------------------|
+| 실행 위치 | 내 컴퓨터 또는 실습 서버 | Google 클라우드 |
+| 비용 | 무료 | 무료 사용량을 넘으면 유료 |
+| 응답 속도 | 서버 사양에 따라 수 초~수십 초 | 대개 수 초 |
+| Tool 선택·계획 능력 | 약함 (Tool을 건너뛰거나 인자를 틀리기도 함) | 안정적 |
+| 이 교재에서의 용도 | 기본 실습 | 세 패턴의 결과 비교, 복잡한 요청 |
 
-```text
-┌─────────────────────────────────────────┐
-│         Spring AI Application           │
-├─────────────────────────────────────────┤
-│            ChatClient                   │
-│  (LLM과 대화하는 인터페이스)            │
-├─────────────────────────────────────────┤
-│     ChatModel (구현체)                  │
-│  ┌────────────┐    ┌────────────┐       │
-│  │  Ollama    │    │  Gemini    │       │
-│  │ChatModel   │    │ChatModel   │       │
-│  └────────────┘    └────────────┘       │
-├─────────────────────────────────────────┤
-│         LLM Provider                    │
-│  ┌────────────┐    ┌────────────┐       │
-│  │  Ollama    │    │   Google   │       │
-│  │  Server    │    │   GenAI    │       │
-│  └────────────┘    └────────────┘       │
-└─────────────────────────────────────────┘
-```
-
-### Spring AI의 핵심 컴포넌트
-
-| 컴포넌트 | 역할 | 예시 |
-|----------|------|------|
-| **ChatClient** | LLM과 대화하는 빌더 패턴 API | `chatClient.prompt().user("...").call()` |
-| **ChatModel** | 실제 LLM 제공자와 연결 | `OllamaChatModel`, `GoogleGenAiChatModel` |
-| **@Tool** | LLM이 호출할 수 있는 메서드 정의 | `searchFlightsByAirline()`, `getAirportList()` |
-| **@ToolParam** | Tool 파라미터 설명 | `departure`, `arrival`, `date` |
+> **생각해 보기**: 같은 문장을 두 모델로 처리했을 때 결과가 다르다면, 그 차이는 코드 때문일까요, 모델 때문일까요? Step 9~11에서 세 패턴을 비교하면서 다시 확인합니다.
 
 ---
 
 ## 일반적인 문제 해결
 
-### 문제 1: 의존성 다운로드 실패
+### 의존성을 내려받지 못함
 
-**에러 메시지:**
 ```text
 Could not resolve dependency for org.springframework.ai:...
 ```
 
-**해결 방법:**
-1. `spring-ai.version`과 BOM 버전 확인 (Milestone 버전이면 `spring-milestones` 저장소 필요)
-2. `./mvnw clean install` 재실행
-3. IntelliJ: Maven 탭 > Reload 클릭
+1. BOM 버전(1.1.4)과 스타터 `artifactId` 철자를 확인합니다.
+2. Milestone·RC 버전을 쓰고 있다면 `spring-milestones` 저장소가 필요합니다.
+3. `./mvnw clean package -U`로 다시 받습니다. IntelliJ에서는 Maven 탭의 Reload를 누릅니다.
 
-### 문제 2: Ollama 연결 실패
+### Ollama에 연결할 수 없음
 
-**에러 메시지:**
 ```text
-Connection refused: ollama.java21.net
+I/O error on POST request for "http://ollama.java21.net/api/chat": Connection refused
 ```
 
-화면에서는 `ChatClientProvider.describeError()`가 이 예외를 "LLM 서버에 연결할 수 없습니다. Ollama가 실행 중인지(spring.ai.ollama.base-url) 확인하거나 다른 모델을 선택하세요."라는 문장으로 바꿔 보여 줍니다.
+화면과 API 응답에는 `ChatClientProvider.describeError()`가 바꾼 문장 "LLM 서버에 연결할 수 없습니다. Ollama가 실행 중인지(spring.ai.ollama.base-url) 확인하거나 다른 모델을 선택하세요."가 나옵니다.
 
-**해결 방법:**
-1. Ollama 서버 실행 중인지 확인
-2. `base-url`이 올바른지 확인
-3. 로컬 Ollama 사용 시: `http://localhost:11434`
-4. 응답이 오래 멈춘다면 `spring.ai.retry` 설정이 빠지지 않았는지 확인 (기본값은 최대 10회 재시도)
+1. `curl <base-url>/api/tags`로 서버가 응답하는지 확인합니다.
+2. 로컬 Ollama라면 `base-url`이 `http://localhost:11434`인지 확인합니다.
+3. 실패 응답이 아주 늦게 온다면 `spring.ai.retry` 설정이 빠지지 않았는지 확인합니다.
 
-### 문제 3: Gemini API 키 오류
+### Gemini를 고르면 "API 키가 설정되지 않았습니다"가 나옴
 
-**에러 메시지:**
-```text
-API key was reported as leaked
-```
+오류가 아니라 의도한 동작입니다. `GOOGLE_GENAI_API_KEY`가 없어 `api-key`가 `not-set`이 되었습니다. Ollama만 쓴다면 그대로 두고, Gemini를 쓰려면 환경 변수를 설정한 뒤 애플리케이션을 다시 시작합니다.
 
-**해결 방법:**
-1. [Google AI Studio](https://aistudio.google.com/app/apikey)에서 새 키 발급
-2. 기존 키 삭제
-3. 환경 변수(`GOOGLE_GENAI_API_KEY`) 업데이트
+### Gemini 키가 거부됨
 
-### 문제 4: Gemini를 선택하면 "API 키가 설정되지 않았습니다"라는 안내가 나옴
+`API key not valid` 또는 `API key was reported as leaked` 오류가 나오면 [Google AI Studio](https://aistudio.google.com/app/apikey)에서 기존 키를 지우고 새로 발급한 뒤 환경 변수를 바꿉니다. 키가 공개 저장소에 올라가면 Google이 자동으로 차단하기도 합니다.
 
-**원인:** `GOOGLE_GENAI_API_KEY` 환경 변수가 없어서 `api-key`가 기본값 `not-set`으로 설정되었습니다. 오류가 아니라 의도한 동작입니다.
+### NoSuchMethodError 등 버전 충돌
 
-**해결 방법:**
-1. Ollama만으로 실습한다면 그대로 두어도 됩니다
-2. Gemini를 쓰려면 환경 변수를 설정하고 애플리케이션을 다시 시작합니다
-
-### 문제 5: Spring AI 버전 충돌
-
-**에러 메시지:**
 ```text
 NoSuchMethodError: org.springframework.ai...
 ```
 
-**해결 방법:**
-1. Spring Boot 버전이 3.5+인지 확인
-2. `spring-ai.version`이 1.1.4인지 확인
-3. `./mvnw clean install`로 의존성 재구축
+Spring Boot가 3.5.x인지, Spring AI 모듈이 모두 BOM(1.1.4)을 따르는지 확인합니다. 스타터에 `<version>`을 따로 적었다면 지웁니다.
 
 ---
 
 ## 실습 과제
 
-1. **(기본)** `DATA_GO_KR_SERVICE_KEY`만 설정하고 `GOOGLE_GENAI_API_KEY`는 설정하지 않은 채 `./mvnw spring-boot:run`으로 애플리케이션을 실행해 보세요. 정상적으로 시작되는지, 화면에서 Gemini를 선택하면 어떤 안내가 나오는지 확인하세요.
-2. **(기본)** 로컬에 Ollama를 설치하고 `ollama pull qwen2.5:3b-instruct-q4_K_M`으로 모델을 내려받은 뒤, `spring.ai.ollama.base-url`을 `http://localhost:11434`로 바꿔 실행해 보세요.
-3. **(도전)** Ollama를 끈 상태에서 검색을 요청하고 실패 응답이 올 때까지 걸리는 시간을 재 보세요. 그다음 `spring.ai.retry` 블록을 주석 처리하고 다시 재 본 뒤, 이 프로젝트가 재시도 설정을 줄인 이유를 한두 문장으로 정리하세요.
-4. **(도전)** `spring.config.import: optional:file:.env[.properties]`를 `application.yml`에 추가해 `.env` 파일에서 두 환경 변수를 읽도록 바꿔 보고, `.env`가 `.gitignore`에 들어 있는지 확인하세요.
+### 과제 1 (기본): 키 없이 실행해 보기
+
+`DATA_GO_KR_SERVICE_KEY`만 설정하고 `GOOGLE_GENAI_API_KEY`는 설정하지 않은 채 애플리케이션을 실행합니다. 화면에서 Gemini를 고르고 영어 문장(`flights from Gwangju to Jeju tomorrow`)으로 검색해 봅니다.
+
+- 힌트: `application.yml`의 `spring.ai.google.genai.api-key`, `ChatClientProvider.get()`
+- 완료 기준: 애플리케이션이 정상 시작되고, 화면에 "Gemini API 키가 설정되지 않았습니다..." 안내가 나온다.
+
+### 과제 2 (기본): 로컬 Ollama로 바꾸기
+
+[Ollama](https://ollama.com/)를 설치하고 `ollama pull qwen2.5:3b-instruct-q4_K_M`으로 모델을 받은 뒤, `spring.ai.ollama.base-url`을 `http://localhost:11434`로 바꿔 실행합니다.
+
+- 힌트: `curl http://localhost:11434/api/tags`로 모델이 보이는지 먼저 확인합니다.
+- 완료 기준: 영어 문장으로 Coordinator 검색을 했을 때 응답 `trace`의 첫 단계 `kind`가 `LLM`이고 `success`가 `true`다.
+
+### 과제 3 (도전): 재시도 설정의 효과 재기
+
+`base-url`을 존재하지 않는 주소(예: `http://localhost:9999`)로 바꾸고 영어 문장으로 검색해, 실패 응답까지 걸린 시간을 잽니다. 다음으로 `spring.ai.retry` 블록을 주석 처리하고 다시 잽니다.
+
+- 힌트: `curl ... -w "\n응답 시간: %{time_total}초\n"`
+- 완료 기준: 두 경우의 시간을 표로 적고, 이 프로젝트가 재시도를 줄인 이유를 한두 문장으로 설명한다. 실험 뒤 설정을 원래대로 되돌린다.
+
+### 과제 4 (도전): .env 파일로 키 읽기
+
+`.gitignore`에 `.env`를 추가하고, `application.yml`에 `spring.config.import: optional:file:.env[.properties]`를 넣어 `.env`에서 두 키를 읽도록 바꿉니다.
+
+- 힌트: 터미널에서 `unset DATA_GO_KR_SERVICE_KEY`로 환경 변수를 지운 뒤 실행해야 `.env`에서 읽는지 확인할 수 있습니다.
+- 완료 기준: 환경 변수 없이 실행해도 한국어 문장 검색(`내일 광주에서 제주`)이 성공하고, `git status`에 `.env`가 나오지 않는다.
 
 ---
 
 ## 요약
 
-이번 단계에서는 Spring AI 프로젝트의 기반을 구축했습니다:
+- Spring AI는 `ChatModel`(제공자별 구현)과 `ChatClient`(공통 API)로 LLM 제공자의 차이를 감춥니다.
+- `pom.xml`에 Spring AI BOM(1.1.4)과 Ollama·Gemini 스타터를 추가하면 `ChatModel` 빈이 자동으로 만들어집니다.
+- `application.yml`에 모델·옵션을 적고, 읽기 타임아웃(300초)과 재시도(최대 2회)를 실습에 맞게 조정했습니다.
+- API 키는 환경 변수로 넘기며, 키가 없어도 앱은 시작되고 해당 기능에서 안내 메시지를 보여 줍니다.
 
-1. **의존성 추가**: `pom.xml`에 Spring AI BOM과 Ollama, Gemini 스타터 의존성을 추가했습니다
-2. **LLM 설정**: `application.yml`을 통해 Ollama(로컬, 무료)와 Gemini(클라우드, 유료) 두 가지 LLM을 설정하고, 읽기 타임아웃(`spring.http.client.read-timeout`)과 재시도(`spring.ai.retry`)를 실습에 맞게 조정했습니다
-3. **API 키 관리**: 환경 변수를 사용하여 API 키를 안전하게 관리하는 방법을 배웠습니다
-4. **설정 확인**: 프로젝트를 실행하고 Spring AI가 정상적으로 초기화되는지 확인했습니다
-
-다음 단계에서는 이 설정을 바탕으로 실제로 LLM과 대화하는 코드를 작성해 보겠습니다.
+이제 설정된 LLM에 실제로 말을 걸 차례입니다. Step 2에서 `ChatClient`를 만들어 첫 LLM 호출을 해 봅니다.
 
 ---
 
 ## 체크리스트
 
-- [ ] Spring AI BOM이 pom.xml에 추가됨
-- [ ] (Milestone 버전 사용 시) Spring Milestone Repository가 설정됨
-- [ ] Ollama 의존성이 추가됨
-- [ ] Gemini 의존성이 추가됨
-- [ ] application.yml에 Ollama 설정이 완료됨
-- [ ] application.yml에 Gemini 설정이 완료됨
-- [ ] `DATA_GO_KR_SERVICE_KEY` 환경 변수가 설정됨 (필수, 항공편 검색 API용)
-- [ ] `GOOGLE_GENAI_API_KEY` 환경 변수가 설정됨 (선택, 없으면 Ollama만 사용)
-- [ ] `spring.http.client.read-timeout`과 `spring.ai.retry` 설정의 의미를 설명할 수 있음
-- [ ] 프로젝트가 정상 실행됨
-- [ ] 콘솔에서 Spring AI 로그 확인됨
+- [ ] LLM, 토큰, 프롬프트, 컨텍스트 윈도우, temperature의 뜻을 한 문장씩 설명할 수 있다. (목표 1)
+- [ ] `pom.xml`에 BOM과 스타터 두 개를 추가하고 `dependency:tree`로 확인했다. (목표 2)
+- [ ] `application.yml`의 Ollama·Gemini 설정과 `spring.http.client.read-timeout`, `spring.ai.retry`의 의미를 설명할 수 있다. (목표 3)
+- [ ] 환경 변수로 `DATA_GO_KR_SERVICE_KEY`를 넘겼고, `GOOGLE_GENAI_API_KEY`가 없을 때의 안내를 확인했다. (목표 4)
+- [ ] 애플리케이션을 실행해 기동 로그와 `http://localhost:8080` 화면을 확인했다. (목표 5)
 
 ---
 
 ## 다음 단계
 
-[Step 2: ChatClient 기초와 LLM 연동](step-2-chatclient-basics.md)에서 실제로 LLM과 대화하는 방법을 학습합니다.
+[Step 2: ChatClient 기초와 LLM 연동](step-2-chatclient-basics.md)에서 `ChatClient` 빈을 만들고, 요청마다 모델을 골라 LLM을 호출합니다.
 
 ---
 
@@ -807,13 +530,10 @@ NoSuchMethodError: org.springframework.ai...
 
 ## 심화 학습
 
-### 왜 두 가지 LLM을 설정하나요?
+### 관찰 가능성(Observability)
 
-1. **개발 단계**: Ollama (무료, 로컬)로 테스트
-2. **운영 단계**: Gemini (빠름, 안정적)로 서비스
+Spring AI는 Micrometer Observation으로 `ChatClient`, `ChatModel`, Tool 호출의 실행 시간과 토큰 사용량을 메트릭·트레이스로 남깁니다. Spring Boot Actuator를 추가하면 `/actuator/metrics`에서 `gen_ai.client.operation` 같은 지표를 볼 수 있습니다. 이 프로젝트는 Actuator 대신 응답의 `trace`(실행 기록)로 단계별 시간을 보여 줍니다(Step 9~11).
 
-### Spring AI의 장점
+### 모델을 하나만 쓰고 싶다면
 
-- **통합 인터페이스**: ChatClient로 모든 LLM 사용 가능
-- **쉬운 전환**: `ChatModel` 빈만 교체하면 LLM 변경 가능
-- **Spring 생태계 통합**: Spring Boot, Spring Security와 쉽게 연동
+스타터를 하나만 남기면 `ChatModel` 빈도 하나만 생깁니다. 다만 이 프로젝트의 `ChatClientConfig`와 `ChatClientProvider`는 두 빈을 모두 주입받으므로 함께 고쳐야 합니다. 두 모델을 동시에 두는 구성이 어떤 점에서 편한지 Step 2를 읽으며 생각해 보세요.

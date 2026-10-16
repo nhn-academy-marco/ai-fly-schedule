@@ -1,6 +1,6 @@
 # API 테스트 가이드
 
-IntelliJ IDEA의 HTTP Client로 공공데이터 포털 API와 이 애플리케이션의 검색 API를 호출해 보는 파일입니다.
+IntelliJ IDEA의 HTTP Client로 공공데이터 포털 API와 이 애플리케이션의 검색 API를 직접 호출해 보는 파일 모음입니다. 01~03은 Step 6~7에서 공공데이터 포털의 응답 구조를 살펴볼 때, 04는 Step 9~11에서 세 패턴의 응답(`SearchResponse`)을 비교할 때 씁니다.
 
 ## 파일 목록
 
@@ -33,8 +33,14 @@ IntelliJ IDEA의 HTTP Client로 공공데이터 포털 API와 이 애플리케�
 2. 요청 왼쪽의 ▶ 버튼을 누르면 응답이 아래에 표시됩니다.
 3. 파일 위쪽의 ▶▶(Run All)로 모든 요청을 차례로 실행할 수 있습니다.
 
-`04-패턴-비교.http`는 애플리케이션을 먼저 실행해야 합니다(`./mvnw spring-boot:run`).
+`04-패턴-비교.http`는 애플리케이션을 먼저 실행해야 합니다(`./mvnw spring-boot:run`). 요청 본문의 `model`은 `"ollama"` 또는 `"gemini"`입니다.
 
+### 3. 확인하기
+
+- 01~03: 응답의 `response.header.resultCode`가 `"00"`이면 성공입니다. 서비스 키가 틀리면 다른 코드와 오류 메시지가 옵니다.
+- 04: 세 응답 모두 `"success": true`이고, `trace` 배열의 `kind`가 패턴마다 다르게 나오면 성공입니다. Coordinator는 `CODE`(정규식 추출에 실패하면 첫 단계만 `LLM`), Tool Calling은 `LLM`과 `TOOL`, Orchestrator-Workers는 `LLM`, `WORKER`, `CODE`가 함께 나옵니다.
+
+> **팁**
 > `01-항공편-조회.http`는 응답 구조를 보기 위한 예제라 `numOfRows=10`으로 10건만 받습니다. 응답의 `totalCount`와 비교해 보세요. 애플리케이션의 `ApiClientService`는 김포→제주처럼 하루 100편이 넘는 노선도 잘리지 않도록 `numOfRows=500`(`MAX_ROWS`)으로 요청합니다.
 
 ## 공항 코드

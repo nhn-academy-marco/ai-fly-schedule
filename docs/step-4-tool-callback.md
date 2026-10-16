@@ -1,187 +1,134 @@
 # Step 4: ChatClient Advisor와 Tool 실행 과정 이해
 
+Step 3에서 LLM이 Tool을 호출하게 만들었지만, LLM이 어떤 프롬프트를 받았고 어떤 Tool을 어떤 인자로 불렀는지는 콘솔 로그 몇 줄로만 알 수 있었습니다. 이번에는 ChatClient의 요청과 응답 앞뒤에 끼어드는 Advisor로 LLM 호출을 들여다보고, Tool 호출을 데이터로 기록해 응답의 실행 기록(`trace`)으로 보여 주는 방법을 배웁니다.
+
+**이 Step에서 만들 것**: `SimpleLoggerAdvisor` 로그를 켜서 LLM 요청·응답을 확인하고, `ToolResultCapture`가 남긴 Tool 호출 기록이 `POST /api/search/tool-calling` 응답에 `TOOL` 단계로 나오는 것을 확인합니다. 마지막으로 LLM 호출 시간을 재는 Advisor를 직접 만들어 등록합니다.
+
+```json
+"trace": [
+  { "order": 1, "kind": "LLM",  "actor": "ollama", "title": "Tool 선택과 답변 작성", "detail": "Tool 1회 호출 후 답변", ... },
+  { "order": 2, "kind": "TOOL", "actor": "searchFlightsByAirline", "title": "LLM이 요청한 Tool 실행", "detail": "광주 → 제주, 2026-10-17 → 2개 항공사, 6편", ... }
+]
+```
+
 ## 학습 목표
 
-이 단계를 마치면 다음을 할 수 있습니다:
+이 Step을 마치면 다음을 할 수 있습니다.
 
-- `SimpleLoggerAdvisor`를 사용하여 LLM의 요청과 응답을 로깅할 수 있습니다
-- 사용자 정의 Advisor를 구현하여 Function Calling의 실행 시간과 결과를 모니터링할 수 있습니다
-- Advisor의 파이프라인 패턴을 이해하고 실행 순서를 제어할 수 있습니다
-- 개발 환경과 운영 환경에 맞는 Advisor 조합을 구성할 수 있습니다
-
----
-
-> **핵심 개념**: Advisor는 ChatClient의 요청/응답 과정에 "끼어드는(Intercept)" 메커니즘입니다. 쉽게 말해, Spring MVC의 `HandlerInterceptor`나 서블릿의 `Filter`와 같은 역할이라고 생각하면 됩니다. 컨트롤러에 요청이 도달하기 전/후에 공통 로직을 실행하는 Filter처럼, LLM에 요청이 전달되기 전/후에 로깅이나 모니터링 로직을 실행하는 것이 Advisor입니다.
+1. Advisor가 무엇이고 ChatClient 호출의 어느 지점에 끼어드는지 설명할 수 있다.
+2. `SimpleLoggerAdvisor` 로그를 켜서 LLM에 보낸 요청과 받은 응답을 확인할 수 있다.
+3. 기본 설정에서 Tool 실행이 Advisor에 보이지 않는 이유를 설명하고, `ToolResultCapture`가 Tool 호출을 기록하는 방식을 설명할 수 있다.
+4. `CallAdvisor`를 구현해 LLM 호출 시간을 기록하는 Advisor를 만들고 등록할 수 있다.
+5. `getOrder()`로 여러 Advisor의 실행 순서를 정할 수 있다.
 
 ---
 
 ## 전체 흐름
 
-Advisor가 Function Calling 과정에서 동작하는 위치를 보여 주는 흐름도입니다.
-
 ```text
-[사용자 요청: "내일 광주에서 제주로 항공편 알려줘"]
-                    ↓
-┌─────────────────────────────────────┐
-│ Advisor #1: 요청 로깅               │  ← "어떤 질문이 들어왔는지" 기록
-└─────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────┐
-│ Advisor #2: 실행 시간 측정 시작     │  ← 타이머 시작
-└─────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────┐
-│ ChatClient → LLM 호출               │
-│   LLM이 Tool 선택: FlightSearchTool │
-│   Tool 실행: searchFlightsByAirline │
-│   LLM이 자연어로 응답 생성          │
-└─────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────┐
-│ Advisor #2: 실행 시간 측정 종료     │  ← 타이머 종료, 소요 시간 계산
-└─────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────┐
-│ Advisor #1: 응답 로깅               │  ← "어떤 답변이 나갔는지" 기록
-└─────────────────────────────────────┘
-                    ↓
-[사용자에게 응답 전달]
+[서비스]  chatClient.prompt()...tools(...).call()
+  ↓
+[Advisor 1 (order 작음, 바깥쪽)]  요청 전 처리   예: 시간 측정 시작
+  ↓
+[Advisor 2 (SimpleLoggerAdvisor)]  요청 로그
+  ↓
+[ChatModel]  LLM 호출
+  │   ↳ LLM이 Tool 호출 요청 → Spring AI가 Tool 실행 → LLM 재호출   (ChatModel 안에서 반복)
+  │        ↳ Tool 메서드가 ToolResultCapture에 호출 기록
+  ↓
+[Advisor 2]  응답 로그 (Tool 실행이 끝난 뒤의 최종 응답)
+  ↓
+[Advisor 1]  응답 후 처리   예: 소요 시간 기록
+  ↓
+[서비스]  ToolResultCapture.getAndClear()로 Tool 호출 기록을 꺼내 trace에 TOOL 단계로 남김
 ```
 
-Spring MVC Filter와의 비교:
+Spring MVC와 비교하면 다음과 같습니다.
 
 ```text
-Spring MVC:  [HTTP 요청] → [Filter] → [Interceptor] → [Controller] → [Service]
-Spring AI:   [사용자 질문] → [Advisor #1] → [Advisor #2] → [ChatClient → LLM]
+Spring MVC:  [HTTP 요청] → [Filter] → [Interceptor] → [컨트롤러]
+Spring AI:   [prompt()]  → [Advisor] → [Advisor]     → [ChatModel → LLM]
 ```
 
 ---
 
-## ChatClient Advisor란?
+## Advisor란?
 
-**ChatClient Advisor**는 ChatClient의 요청/응답 과정에 개입하여 로깅, 수정, 모니터링할 수 있는 메커니즘입니다.
+**Advisor**는 ChatClient의 요청이 LLM에 가기 전과 응답이 돌아온 뒤에 공통 처리를 끼워 넣는 구성 요소입니다. 서블릿 `Filter`가 컨트롤러 앞뒤에서 공통 로직을 실행하듯, Advisor는 LLM 호출 앞뒤에서 로깅·측정·프롬프트 보강 같은 일을 합니다.
 
-### Advisor가 필요한 이유
+| 쓰임 | 예 |
+|------|-----|
+| 디버깅 | 실제로 나간 프롬프트와 받은 응답을 로그로 확인 (`SimpleLoggerAdvisor`) |
+| 측정 | LLM 호출 시간, 토큰 사용량 기록 |
+| 프롬프트 보강 | 대화 기록이나 검색한 문서를 프롬프트에 덧붙이기 (`MessageChatMemoryAdvisor` 등) |
+| 차단·가공 | 금지어가 든 요청 막기, 응답 다듬기 |
 
-| 이유 | 설명 | 예시 |
-|------|------|------|
-| **디버깅** | LLM에 보낸 요청과 최종 응답 확인 | "프롬프트가 의도대로 전달되었나?" |
-| **성능 모니터링** | 각 단계의 실행 시간 측정 | "이 Tool이 너무 느려" |
-| **보안 로깅** | 어떤 요청이 들어왔는지 기록 | "민감 정보가 노출되었나?" |
-| **요청/응답 수정** | 프롬프트나 결과를 가공 | "응답이 너무 길어서 줄여야겠어" |
-
-### Advisor 실행 타이밍
-
-```text
-┌───────────────────────────────────────────────────────────┐
-│  사용자 질문                                              │
-│  "내일 광주에서 제주로 가는 항공편 알려줘"                │
-└───────────────────────────────────────────────────────────┘
-                    ↓
-┌───────────────────────────────────────────────────────────┐
-│  Advisor: 요청 로깅                                       │
-│  - 사용자 요청 기록                                       │
-└───────────────────────────────────────────────────────────┘
-                    ↓
-┌───────────────────────────────────────────────────────────┐
-│  LLM 분석 및 Tool 선택                                    │
-│  → FlightSearchTool 선택                                  │
-└───────────────────────────────────────────────────────────┘
-                    ↓
-┌───────────────────────────────────────────────────────────┐
-│  Tool 실행                                                │
-│  searchFlightsByAirline("광주", "제주", "내일")           │
-└───────────────────────────────────────────────────────────┘
-                    ↓
-┌───────────────────────────────────────────────────────────┐
-│  Advisor: 응답 로깅                                       │
-│  - 최종 응답 내용 기록                                    │
-│  (Tool 실행은 ChatModel 내부에서 처리되므로               │
-│   Advisor는 Tool 호출 이후의 최종 응답을 받음)            │
-└───────────────────────────────────────────────────────────┘
-```
+> **주의**: 기본 설정에서 Tool 호출 루프는 `ChatModel` 안에서 돕니다. 그래서 Advisor는 첫 요청과, Tool 실행이 모두 끝난 뒤의 최종 응답만 봅니다. "LLM이 어떤 Tool을 어떤 인자로 불렀는가"는 Advisor 로그만으로는 알 수 없습니다. 이 빈틈을 채우는 것이 Step 4-2의 `ToolResultCapture`입니다.
 
 ---
 
-## Step 4-1: SimpleLoggerAdvisor 적용
+## Step 4-1: SimpleLoggerAdvisor로 요청·응답 보기
 
-### 왜 이렇게 할까요?
+### 왜 필요한가
 
-Step 3에서 Function Calling을 구현했지만, LLM이 실제로 어떤 Tool을 선택했는지, 어떤 파라미터를 넘겼는지, Tool 실행에 얼마나 시간이 걸렸는지 알기 어렵습니다. 콘솔에 아무 로그도 출력되지 않기 때문에, 문제가 발생해도 원인을 파악할 수 없습니다.
+LLM이 엉뚱한 답을 하거나 `.entity()` 변환에 실패하면, 실제로 어떤 프롬프트가 나갔고 어떤 응답이 왔는지 봐야 원인을 찾을 수 있습니다. `SimpleLoggerAdvisor`는 Spring AI가 기본 제공하는 Advisor로, 요청과 응답을 DEBUG 레벨 로그로 남깁니다.
 
-`SimpleLoggerAdvisor`는 Spring AI에서 기본으로 제공하는 Advisor로, LLM에게 보낸 요청과 받은 응답을 자동으로 로깅합니다. 다만 기본 설정에서는 Tool 실행이 ChatModel 내부에서 처리되므로, Advisor에는 첫 요청과 Tool 실행 후의 최종 응답만 보입니다. 어떤 Tool이 어떤 인자로 실행됐는지는 Tool 메서드 안의 로그(Step 4-2)로 확인합니다.
+### 어떻게 하는가
 
-> **참고**: Spring AI 1.1에는 Tool 호출 루프를 ChatModel 대신 Advisor 체인에서 수행하는 `ToolCallAdvisor`도 있습니다. 이를 등록하면 그 뒤에 오는 Advisor가 Tool 호출 단계마다 요청/응답을 볼 수 있습니다. 이 교재에서는 기본 방식(ChatModel 내부 실행)을 사용합니다.
+이 프로젝트는 Step 2의 `ChatClientConfig`에서 이미 두 ChatClient 모두에 등록해 두었습니다.
 
-> **Spring Boot 복습**: `SimpleLoggerAdvisor`는 Spring MVC의 `CommonsRequestLoggingFilter`와 비슷한 역할을 합니다. 필터를 추가하면 모든 HTTP 요청이 자동으로 로깅되듯, Advisor를 추가하면 모든 LLM 요청/응답이 자동으로 로깅됩니다. Step 2에서 본 `ChatClientConfig`의 빌더에 `.defaultAdvisors()` 한 줄만 추가하면 됩니다.
-
-### ChatClientConfig에 SimpleLoggerAdvisor 추가
-
-실제 프로젝트의 `ChatClientConfig`는 이미 두 ChatClient 모두에 `SimpleLoggerAdvisor`를 등록해 두었습니다.
+파일: `src/main/java/net/java21/flyschedule/config/ChatClientConfig.java` (일부)
 
 ```java
-@Configuration  // ① Spring 설정 클래스 (Step 2에서 이미 배웠습니다)
-public class ChatClientConfig {
-
-    @Bean
-    public ChatClient ollamaChatClient(@Qualifier("ollamaChatModel") ChatModel ollamaChatModel) {  // ② Ollama 모델 주입
-        return ChatClient.builder(ollamaChatModel)          // ③ 빌더 생성
-                .defaultAdvisors(new SimpleLoggerAdvisor()) // ④ 로깅 Advisor 추가 (이번 단계의 핵심)
-                .build();                                   // ⑤ ChatClient 완성
-    }
-
-    @Bean
-    public ChatClient geminiChatClient(@Qualifier("googleGenAiChatModel") ChatModel geminiChatModel) {
-        return ChatClient.builder(geminiChatModel)
-                .defaultAdvisors(new SimpleLoggerAdvisor())
-                .build();
-    }
-}
+return ChatClient.builder(ollamaChatModel)
+        .defaultAdvisors(new SimpleLoggerAdvisor())
+        .build();
 ```
 
-Tool과 달리 Advisor는 `defaultAdvisors`로 **기본 등록**했다는 점에 주목하세요. 로깅은 Tool이 있든 없든 모든 LLM 호출(검색 조건 추출, 작업 계획, 결과 요약, Tool Calling)에 필요하고, 등록해도 LLM의 판단에는 영향을 주지 않기 때문입니다. 반대로 Tool은 LLM의 판단을 바꾸므로 필요한 요청에서만 `.tools(...)`로 넘깁니다(Step 3).
+Tool과 달리 Advisor는 `defaultAdvisors`로 기본 등록했다는 점에 주목하세요. 로깅은 모든 LLM 호출(검색 조건 추출, 작업 계획, 결과 요약, Tool Calling)에 필요하고, 등록해도 LLM의 판단에 영향을 주지 않습니다. 반대로 Tool은 LLM의 판단을 바꾸므로 필요한 요청에서만 `.tools(...)`로 넘깁니다(Step 3).
 
-### SimpleLoggerAdvisor가 로깅하는 정보
+`SimpleLoggerAdvisor`의 로그는 DEBUG 레벨이고, 이 프로젝트의 기본 로그 설정(`src/main/resources/logback-spring.xml`)은 `org.springframework`를 INFO로 둡니다. 그래서 Advisor 로거의 레벨만 올립니다.
 
-`SimpleLoggerAdvisor`는 DEBUG 레벨로 요청(`ChatClientRequest`)과 응답(`ChatResponse`의 JSON)을 출력합니다. 아래는 핵심만 줄여서 표시한 예시입니다.
-
-```text
-DEBUG o.s.a.c.c.advisor.SimpleLoggerAdvisor - request: ChatClientRequest[prompt=Prompt{messages=[UserMessage{content='내일 광주에서 제주로 가는 항공편 알려줘', ...}], ...}, context={}]
-
-DEBUG o.s.a.c.c.advisor.SimpleLoggerAdvisor - response: { "result" : { "output" : { "text" : "네, 내일 광주에서 제주로 가는 항공편을 찾았어요...", ... } } }
-```
-
----
-
-## Step 4-2: Tool 실행 로그 확인
-
-### application.yml 로그 설정
+파일: `src/main/resources/application.yml`에 추가
 
 ```yaml
 logging:
   level:
-    org.springframework.ai: DEBUG
-    net.java21.flyschedule: DEBUG
+    org.springframework.ai.chat.client.advisor: DEBUG
 ```
 
-> 이 프로젝트는 `src/main/resources/logback-spring.xml`로 로그를 설정합니다. `net.java21.flyschedule` 패키지는 기본 프로필에서 DEBUG로 출력되므로, `SimpleLoggerAdvisor` 로그를 보려면 `org.springframework.ai.chat.client.advisor` 로거의 레벨만 DEBUG로 올리면 됩니다.
+### 확인하기
 
-### 콘솔 로그 예시
+애플리케이션을 다시 실행하고 Tool Calling 에이전트 엔드포인트를 호출합니다. Coordinator 엔드포인트는 한국어 문장이 정규식으로 처리되면 LLM을 부르지 않으므로 Advisor 로그가 남지 않습니다.
+
+```bash
+curl -X POST http://localhost:8080/api/search/tool-calling \
+  -H "Content-Type: application/json" \
+  -d '{"message": "내일 광주에서 제주로 가는 항공편 알려줘"}'
+```
+
+콘솔 로그(날짜·스레드 생략, 줄여서 표시):
 
 ```text
-DEBUG o.s.a.c.c.advisor.SimpleLoggerAdvisor - request: ChatClientRequest[prompt=Prompt{messages=[UserMessage{content='내일 광주에서 제주로 가는 항공편 알려줘', ...}], ...}]
-
-INFO  n.j.flyschedule.mcp.FlightSearchTool - MCP Tool 호출: searchFlightsByAirline(departure=광주, arrival=제주, date=2026-10-16)
+DEBUG o.s.a.c.c.a.SimpleLoggerAdvisor - request: ChatClientRequest[prompt=Prompt{messages=[SystemMessage{textContent='당신은 국내선 항공편 검색 도우미입니다. ...'}, UserMessage{content='내일 광주에서 제주로 가는 항공편 알려줘', ...}], modelOptions=...}, context={...}]
+INFO  n.j.flyschedule.mcp.FlightSearchTool - MCP Tool 호출: searchFlightsByAirline(departure=광주, arrival=제주, date=2026-10-17)
 INFO  n.j.flyschedule.mcp.FlightSearchTool - MCP Tool 응답: 2개 항공사, 6편 (항공사별 최대 3편)
-
-DEBUG o.s.a.c.c.advisor.SimpleLoggerAdvisor - response: { "result" : { "output" : { "text" : "네, 내일 광주에서 제주로 가는 항공편을 찾았어요...", ... } } }
+DEBUG o.s.a.c.c.a.SimpleLoggerAdvisor - response: { "result" : { "output" : { "text" : "내일 광주에서 제주로 가는 항공편은 모두 6편입니다. ...", ... } } }
 ```
 
-### 로그 대신 실행 기록으로 남기기: ToolResultCapture
+request 로그 한 줄과 response 로그 한 줄 사이에 Tool 로그가 끼어 있습니다. Tool 실행이 Advisor 바깥이 아니라 `ChatModel` 안에서 일어났다는 증거입니다.
 
-로그는 개발자가 콘솔에서 볼 때는 충분하지만, 화면에 "LLM이 어떤 Tool을 어떤 인자로 불렀는가"를 보여 주려면 Tool 호출을 데이터로 모아야 합니다. 앞에서 보았듯 기본 설정의 Advisor에는 Tool 호출 단계가 보이지 않으므로, 이 프로젝트는 Tool 메서드가 직접 호출 기록을 남기게 했습니다.
+---
 
-`src/main/java/net/java21/flyschedule/mcp/ToolResultCapture.java` (주석 생략)
+## Step 4-2: Tool 호출을 실행 기록으로 남기기 — ToolResultCapture
+
+### 왜 필요한가
+
+로그는 개발자가 콘솔에서 볼 때는 충분하지만, 화면에 "LLM이 어떤 Tool을 어떤 인자로 불렀고 얼마나 걸렸는가"를 보여 주려면 Tool 호출을 데이터로 모아야 합니다. 기본 설정의 Advisor에는 Tool 호출 단계가 보이지 않으므로, 이 프로젝트는 Tool 메서드가 직접 호출 기록을 남기게 했습니다.
+
+### 어떻게 하는가
+
+파일: `src/main/java/net/java21/flyschedule/mcp/ToolResultCapture.java` (주석 생략)
 
 ```java
 public final class ToolResultCapture {
@@ -196,556 +143,307 @@ public final class ToolResultCapture {
 
     private static final ThreadLocal<List<ToolCall>> CALLS = ThreadLocal.withInitial(ArrayList::new);
 
+    private ToolResultCapture() {
+    }
+
     public static <T> T capture(String toolName, String arguments, Supplier<T> action) {
         long start = System.nanoTime();
         try {
-            T result = action.get();                       // Tool 작업을 여기서 실행
+            T result = action.get();
             CALLS.get().add(new ToolCall(toolName, arguments, result, null, start, System.nanoTime()));
-            return result;                                 // 결과를 그대로 돌려주므로 return 문에 바로 쓸 수 있음
+            return result;
         } catch (RuntimeException e) {
             CALLS.get().add(new ToolCall(toolName, arguments, null, e.getMessage(), start, System.nanoTime()));
-            throw e;                                       // 실패로 기록한 뒤 다시 던짐 (Spring AI가 LLM에게 오류 전달)
+            throw e;
         }
     }
 
     public static List<ToolCall> getAndClear() {
-        List<ToolCall> calls = List.copyOf(CALLS.get());   // 호출 순서 유지
+        List<ToolCall> calls = List.copyOf(CALLS.get());
         CALLS.remove();
         return calls;
     }
 }
 ```
 
-- 모든 `@Tool` 메서드는 `return ToolResultCapture.capture("getAirportCode", airportName, () -> airportListAgent.getAirportCode(airportName));`처럼 실제 작업을 `Supplier`로 넘깁니다. `capture()`가 작업을 직접 실행하므로 실행 시작·종료 시각을 잴 수 있고, 예외가 나도 "실패한 호출"로 기록할 수 있습니다
-- `ToolCallingSearchService`는 `call()`이 끝난 뒤 `getAndClear()`로 기록을 꺼내, LLM 단계 다음에 Tool 호출마다 TOOL 단계(실제 실행 구간)를 남깁니다 (Step 10)
-- `ThreadLocal`을 쓸 수 있는 이유: Spring AI 1.1.4의 `call()`은 Tool을 호출한 스레드에서 순서대로 실행합니다. `stream()`은 다른 스레드에서 Tool을 실행하므로 이 방식을 쓸 수 없습니다
+**코드 읽기**
 
----
+1. `ToolCall`: Tool 호출 한 건입니다. 이름, 인자 요약, 결과, 실패 메시지, 시작·종료 시각(`System.nanoTime()`)을 담습니다.
+2. `capture(이름, 인자 요약, 작업)`: 실제 작업을 `Supplier`로 받아 직접 실행합니다. 그래서 실행 시간을 잴 수 있고, 예외가 나면 실패로 기록한 뒤 다시 던집니다. 다시 던진 예외는 Spring AI가 LLM에게 오류로 전달합니다.
+3. 결과를 그대로 돌려주므로 Tool 메서드는 `return ToolResultCapture.capture(...)` 한 줄로 기록과 반환을 함께 합니다.
+4. `getAndClear()`: 지금까지의 기록을 호출 순서대로 꺼내고 비웁니다.
+5. `ThreadLocal`: 요청마다 기록이 섞이지 않게 스레드별로 따로 저장합니다. Spring AI 1.1.4의 `call()`은 Tool을 호출한 스레드에서 차례로 실행하므로 이 방식이 동작합니다. `stream()`은 다른 스레드에서 Tool을 실행하므로 쓸 수 없습니다.
 
-## Step 4-3: 사용자 정의 로깅이 필요한 경우
+모든 Tool 메서드는 같은 모양으로 기록합니다.
 
-### 왜 이렇게 할까요?
-
-`SimpleLoggerAdvisor`는 기본적인 요청/응답 로깅만 제공합니다. 하지만 실제 개발에서는 다음과 같은 추가 정보가 필요할 수 있습니다.
-
-- **실행 시간**: LLM 호출에 얼마나 시간이 걸렸는지 측정하고 싶을 때
-- **요청 추적**: 여러 요청이 동시에 들어올 때 각 요청을 구분하고 싶을 때
-- **상세 로깅**: Tool의 입력값과 출력값을 더 자세히 기록하고 싶을 때
-
-이럴 때는 Spring AI의 `CallAdvisor` 인터페이스를 구현하여 나만의 Advisor를 만들 수 있습니다. Spring MVC에서 `HandlerInterceptor`를 구현하여 커스텀 로깅을 만들었던 것과 동일한 방식입니다.
-
-> **Spring Boot 복습**: `CallAdvisor`는 AOP(관점 지향 프로그래밍)의 Around Advice와 같은 패턴입니다. `adviseCall()` 안에서 호출하는 `chain.nextCall()`이 실제 LLM 호출이며, 그 앞뒤로 원하는 로직을 실행할 수 있습니다. 이것은 Servlet Filter의 `doFilter()` 호출이나 Spring Interceptor의 `preHandle()`/`postHandle()`과 동일한 구조입니다. (Spring AI 1.1에서는 동기 호출용 `CallAdvisor`와 스트리밍용 `StreamAdvisor`(`adviseStream()`)로 나뉩니다.)
-
-### CustomLoggingAdvisor 구현
+파일: `src/main/java/net/java21/flyschedule/mcp/AirportInfoTool.java` (일부)
 
 ```java
-package net.java21.flyschedule.config;
+return ToolResultCapture.capture("getAirportCode", airportName, () -> airportListAgent.getAirportCode(airportName));
+```
 
-import org.springframework.ai.chat.client.ChatClientRequest;
-import org.springframework.ai.chat.client.ChatClientResponse;
-import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
-import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
+`ToolCallingSearchService`는 `call()`이 끝난 뒤 기록을 꺼내, LLM 단계 다음에 Tool 호출마다 TOOL 단계를 남깁니다(Step 10에서 전체를 읽습니다).
 
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+파일: `src/main/java/net/java21/flyschedule/service/toolcalling/ToolCallingSearchService.java` (일부)
 
-/**
- * 사용자 정의 로깅 Advisor
- */
-@Component  // ① Spring Bean으로 등록하여 다른 곳에서 주입받을 수 있게 함
-public class CustomLoggingAdvisor implements CallAdvisor {  // ② CallAdvisor 인터페이스 구현
+```java
+// LLM 호출 구간을 먼저, 그 안에서 실행된 Tool 호출을 이어서 기록한다
+List<ToolCall> calls = ToolResultCapture.getAndClear();
+trace.record(Kind.LLM, ChatClientProvider.normalize(model),
+        "Tool 선택과 답변 작성", "Tool " + calls.size() + "회 호출 후 답변", start);
+recordToolCalls(calls, trace);
+```
 
-    private static final Logger log = LoggerFactory.getLogger(CustomLoggingAdvisor.class);
-
-    private final Map<String, Long> startTimeMap = new ConcurrentHashMap<>();  // ③ 요청별 시작 시간 저장 (동시 요청 대비)
-
-    @Override
-    public String getName() {  // ④ Advisor의 이름 반환 (로그에서 식별용)
-        return "CustomLoggingAdvisor";
-    }
-
-    @Override
-    public int getOrder() {  // ⑤ 실행 순서: 값이 작을수록 먼저(바깥쪽에서) 실행
-        return 0;
-    }
-
-    @Override
-    public ChatClientResponse adviseCall(
-            ChatClientRequest request,   // ⑥ 사용자 메시지와 옵션을 담은 요청(Prompt + context)
-            CallAdvisorChain chain) {    // ⑦ 다음 Advisor 또는 실제 LLM 호출을 수행하는 체인
-
-        // ⑧ 고유한 요청 ID 생성 (여러 요청이 동시에 들어와도 구분 가능)
-        String requestId = UUID.randomUUID().toString().substring(0, 8);
-        startTimeMap.put(requestId, System.currentTimeMillis());  // ⑨ 시작 시간 기록
-
-        log.info("========================================");
-        log.info("요청 ID: {}", requestId);
-        log.info("사용자 요청: {}", request.prompt().getUserMessage().getText());  // ⑩ 사용자 질문 내용 로깅
-        log.info("========================================");
-
-        try {
-            // ⑪ 핵심: chain.nextCall()이 실제 LLM 호출을 수행합니다
-            // 이 줄 앞의 코드는 "요청 전 처리", 뒤의 코드는 "응답 후 처리"가 됩니다
-            ChatClientResponse response = chain.nextCall(request);
-
-            long duration = System.currentTimeMillis() - startTimeMap.get(requestId);  // ⑫ 소요 시간 계산
-
-            log.info("========================================");
-            log.info("응답 ID: {}", requestId);
-            log.info("전체 실행 시간: {}ms", duration);  // ⑬ LLM 호출 + Tool 실행 포함 전체 시간
-            log.info("응답 내용: {}", response.chatResponse().getResult().getOutput().getText());  // ⑭ LLM이 생성한 답변
-            log.info("========================================");
-
-            return response;
-
-        } finally {
-            startTimeMap.remove(requestId);  // ⑮ 메모리 누수 방지: 요청 완료 후 정리
-        }
-    }
+```java
+private static void recordToolCalls(List<ToolCall> calls, ExecutionTrace trace) {
+    calls.forEach(call -> trace.record(Kind.TOOL, call.toolName(),
+            call.failed() ? "Tool 실행 실패" : "LLM이 요청한 Tool 실행",
+            call.arguments() + " → " + (call.failed() ? "실패: " + call.error() : describe(call.result())),
+            call.startNanos(), call.endNanos()));
 }
 ```
 
-### ChatClientConfig에 Custom Advisor 등록
+> **주의**: `ThreadLocal`은 비우지 않으면 남습니다. Tomcat은 요청 처리 스레드를 재사용하므로, 남은 기록이 다음 요청에 섞일 수 있습니다. 그래서 `ToolCallingSearchService.search()`는 시작할 때와 예외가 났을 때도 `getAndClear()`를 부르고, LLM 없이 Tool을 직접 부르는 `McpController` 경로를 위해 `ToolResultCaptureCleanupFilter`(`config` 패키지)가 요청이 끝날 때마다 기록을 비웁니다.
 
-`ollamaChatClient()` 메서드의 파라미터에 `CustomLoggingAdvisor customLoggingAdvisor`를 추가해 주입받은 뒤 등록합니다.
+### 확인하기
 
-```java
-@Bean
-public ChatClient ollamaChatClient(@Qualifier("ollamaChatModel") ChatModel ollamaChatModel,
-                                   CustomLoggingAdvisor customLoggingAdvisor) {
-    return ChatClient.builder(ollamaChatModel)
-            .defaultAdvisors(
-                    new SimpleLoggerAdvisor(),
-                    customLoggingAdvisor  // 사용자 정의 Advisor (파라미터로 주입)
-            )
-            .build();
-}
+Step 4-1의 curl 응답에서 `trace`를 봅니다.
+
+```json
+"trace": [
+  { "order": 1, "kind": "LLM",  "actor": "ollama", "title": "Tool 선택과 답변 작성", "detail": "Tool 1회 호출 후 답변", "startMs": 0, "durationMs": 5120, ... },
+  { "order": 2, "kind": "TOOL", "actor": "searchFlightsByAirline", "title": "LLM이 요청한 Tool 실행", "detail": "광주 → 제주, 2026-10-17 → 2개 항공사, 6편", "startMs": 2310, "durationMs": 480, ... }
+]
 ```
 
-특정 요청에만 Advisor를 적용하고 싶다면 `chatClient.prompt().advisors(customLoggingAdvisor)...`처럼 요청 단위로 넘길 수도 있습니다.
+TOOL 단계의 구간(`startMs`부터 `startMs + durationMs`까지)이 LLM 단계의 구간 안에 들어가는지 확인하세요. Tool이 LLM 호출 도중에 실행되었다는 뜻입니다. 화면(`http://localhost:8080`)의 타임라인에서도 LLM 막대 안에 Tool 막대가 그려집니다.
 
----
-
-## Step 4-4: 테스트
-
-### 기존 컨트롤러로 테스트
-
-LLM이 Tool을 호출하는 과정을 보려면 Tool Calling 에이전트 엔드포인트를 사용합니다. (Coordinator 엔드포인트는 정규식으로 처리되면 LLM을 부르지 않으므로 Advisor 로그가 남지 않습니다.)
+테스트로도 확인합니다.
 
 ```bash
-curl -X POST http://localhost:8080/api/search/tool-calling \
-  -H "Content-Type: application/json" \
-  -d '{"message": "내일 광주에서 제주로 가는 항공편 알려줘"}'
+./mvnw test -Dtest=ToolResultCaptureTest
 ```
 
-응답 JSON의 `trace`에는 `kind`가 `LLM`인 단계("Tool 선택과 답변 작성")가 먼저, 그 안에서 실행된 `TOOL` 단계(`searchFlightsByAirline`, "LLM이 요청한 Tool 실행")가 이어서 담겨 있습니다. TOOL 단계의 시작 시각과 소요 시간은 LLM 단계 구간 안에 들어갑니다. 콘솔 로그와 비교해 보세요.
-
-### 콘솔에서 확인되는 로그
-
-```text
-========================================
-요청 ID: a1b2c3d4
-사용자 요청: 내일 광주에서 제주로 가는 항공편 알려줘
-========================================
-
-DEBUG o.s.a.c.c.advisor.SimpleLoggerAdvisor - request: ChatClientRequest[prompt=Prompt{messages=[UserMessage{content='내일 광주에서 제주로 가는 항공편 알려줘', ...}], ...}]
-
-INFO  n.j.flyschedule.mcp.FlightSearchTool - MCP Tool 호출: searchFlightsByAirline(departure=광주, arrival=제주, date=2026-10-16)
-INFO  n.j.flyschedule.mcp.FlightSearchTool - MCP Tool 응답: 2개 항공사, 6편 (항공사별 최대 3편)
-
-DEBUG o.s.a.c.c.advisor.SimpleLoggerAdvisor - response: { "result" : { "output" : { "text" : "네, 내일 광주에서 제주로 가는 항공편을 찾았어요...", ... } } }
-
-========================================
-응답 ID: a1b2c3d4
-전체 실행 시간: 5234ms
-응답 내용: 네, 내일 광주에서 제주로 가는 항공편을 찾았어요...
-========================================
-```
+`capturesInOrder`(호출 순서 유지), `recordsTiming`(실행 구간 기록), `recordsFailure`(실패 기록 후 예외 다시 던짐), `isolatedPerThread`(스레드별 분리) 등이 통과하면 됩니다.
 
 ---
 
-## Step 4-5: 성능 모니터링
+## Step 4-3: 사용자 정의 Advisor 만들기
 
-### PerformanceMonitoringAdvisor 구현
+### 왜 필요한가
+
+`SimpleLoggerAdvisor`는 요청과 응답을 그대로 찍을 뿐입니다. "LLM 호출 하나에 몇 ms가 걸렸는가", "한 번의 검색에서 LLM을 몇 번 불렀는가" 같은 정보가 필요하면 Advisor를 직접 만듭니다. 동기 호출용 Advisor는 `CallAdvisor` 인터페이스를 구현합니다(스트리밍용은 `StreamAdvisor`).
+
+### 어떻게 하는가
+
+다음 파일은 실습용이며 프로젝트에 들어 있지 않습니다.
+
+파일(직접 만들기): `src/main/java/net/java21/flyschedule/practice/TimingAdvisor.java`
 
 ```java
-package net.java21.flyschedule.config;
+package net.java21.flyschedule.practice;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-
-/**
- * 성능 모니터링 Advisor
- */
-@Component
-public class PerformanceMonitoringAdvisor implements CallAdvisor {
-
-    private static final Logger log = LoggerFactory.getLogger(PerformanceMonitoringAdvisor.class);
-
-    private final ConcurrentHashMap<String, AtomicInteger> callCounts = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, AtomicLong> totalDurations = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, AtomicLong> minDurations = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, AtomicLong> maxDurations = new ConcurrentHashMap<>();
-
-    @Override
-    public String getName() {
-        return "PerformanceMonitoringAdvisor";
-    }
-
-    @Override
-    public int getOrder() {
-        return 0;
-    }
-
-    @Override
-    public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-
-        long startTime = System.currentTimeMillis();
-        String requestId = UUID.randomUUID().toString().substring(0, 8);
-
-        try {
-            ChatClientResponse response = chain.nextCall(request);
-
-            long duration = System.currentTimeMillis() - startTime;
-            recordCall("ChatClient", duration);
-
-            log.info("요청 ID: {}, 실행 시간: {}ms", requestId, duration);
-
-            return response;
-
-        } catch (Exception e) {
-            long duration = System.currentTimeMillis() - startTime;
-            log.error("요청 ID: {}, 실행 실패, 소요 시간: {}ms", requestId, duration, e);
-            throw e;
-        }
-    }
-
-    private void recordCall(String name, long duration) {
-        callCounts.computeIfAbsent(name, k -> new AtomicInteger(0)).incrementAndGet();
-        totalDurations.computeIfAbsent(name, k -> new AtomicLong(0)).addAndGet(duration);
-        minDurations.computeIfAbsent(name, k -> new AtomicLong(Long.MAX_VALUE))
-                .updateAndGet(current -> Math.min(current, duration));
-        maxDurations.computeIfAbsent(name, k -> new AtomicLong(0))
-                .updateAndGet(current -> Math.max(current, duration));
-    }
-
-    public void printStatistics() {
-        log.info("==================== 성능 통계 ====================");
-
-        callCounts.forEach((name, count) -> {
-            long total = totalDurations.get(name).get();
-            long min = minDurations.get(name).get();
-            long max = maxDurations.get(name).get();
-            double avg = (double) total / count.get();
-
-            log.info("이름: {}", name);
-            log.info("  호출 횟수: {}", count.get());
-            log.info("  평균 실행 시간: {}ms", String.format("%.2f", avg));  // SLF4J는 {:.2f} 형식을 지원하지 않음
-            log.info("  최소/최대: {}ms / {}ms", min, max);
-            log.info("--------------------------------------------------");
-        });
-
-        log.info("======================================================");
-    }
-
-    public void reset() {
-        callCounts.clear();
-        totalDurations.clear();
-        minDurations.clear();
-        maxDurations.clear();
-    }
-}
-```
-
-### 통계 확인용 컨트롤러
-
-```java
-@RestController
-@RequestMapping("/api/monitoring")
-@RequiredArgsConstructor  // Lombok: final 필드 생성자 주입
-public class MonitoringController {
-
-    private final PerformanceMonitoringAdvisor performanceAdvisor;
-
-    @GetMapping("/stats")
-    public String getStatistics() {
-        performanceAdvisor.printStatistics();
-        return "통계가 콘솔에 출력되었습니다.";
-    }
-
-    @GetMapping("/stats/reset")
-    public String resetStatistics() {
-        performanceAdvisor.reset();
-        return "통계가 초기화되었습니다.";
-    }
-}
-```
-
-### 성능 통계 출력 예시
-
-```text
-==================== 성능 통계 ====================
-이름: ChatClient
-  호출 횟수: 25
-  평균 실행 시간: 4823.45ms
-  최소/최대: 1234ms / 8756ms
---------------------------------------------------
-======================================================
-```
-
----
-
-## Step 4-6: 고급 Advisor 패턴
-
-### 패턴 1: 요청 캐싱 (CachingAdvisor)
-
-아래 예시는 Caffeine 캐시 라이브러리(`com.github.ben-manes.caffeine:caffeine`) 의존성이 있다고 가정합니다.
-
-```java
 @Slf4j
-@Component
-public class CachingAdvisor implements CallAdvisor {
-
-    private final Cache<String, ChatClientResponse> cache =
-        Caffeine.newBuilder()
-            .maximumSize(100)
-            .expireAfterWrite(10, TimeUnit.MINUTES)
-            .build();
+public class TimingAdvisor implements CallAdvisor {
 
     @Override
     public String getName() {
-        return "CachingAdvisor";
+        return "TimingAdvisor";
     }
 
     @Override
     public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE;  // 가장 먼저 실행
+        return -100;   // SimpleLoggerAdvisor(0)보다 바깥쪽에서 실행
     }
 
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
+        long start = System.currentTimeMillis();
+        log.info("LLM 요청: {}", request.prompt().getUserMessage().getText());
 
-        String cacheKey = request.prompt().getUserMessage().getText();
+        ChatClientResponse response = chain.nextCall(request);   // 다음 Advisor 또는 실제 LLM 호출
 
-        ChatClientResponse cached = cache.getIfPresent(cacheKey);
-        if (cached != null) {
-            log.info("캐시 히트: {}", cacheKey);
-            return cached;
-        }
-
-        ChatClientResponse response = chain.nextCall(request);
-        cache.put(cacheKey, response);
-
+        log.info("LLM 응답: {}ms", System.currentTimeMillis() - start);
         return response;
     }
 }
 ```
 
-### 패턴 2: 재시도 (RetryAdvisor)
+**코드 읽기**
 
-> **참고**: Spring AI는 모델 호출 단계에서 이미 재시도를 합니다. 이 프로젝트는 `application.yml`의 `spring.ai.retry`로 최대 2회, 1~5초 간격으로 줄여 두었습니다(Step 1). 아래 `RetryAdvisor`는 Advisor 구조를 익히기 위한 예제이며, 함께 쓰면 재시도가 곱절로 늘어날 수 있으니 주의하세요.
+1. `getName()`: 로그와 디버깅에서 Advisor를 구분하는 이름입니다.
+2. `getOrder()`: 값이 작을수록 바깥쪽에서 먼저 실행됩니다. Step 4-4에서 자세히 봅니다.
+3. `chain.nextCall(request)`: 체인의 다음 Advisor, 마지막에는 실제 LLM 호출로 이어집니다. 이 줄 앞은 "요청 전 처리", 뒤는 "응답 후 처리"입니다. AOP의 Around Advice나 `Filter.doFilter()`와 같은 구조입니다.
+4. 시작 시각을 지역 변수로 두면 요청마다 따로 잡히므로 동시 요청에도 안전합니다. Advisor 객체는 여러 요청이 함께 쓰므로, 요청별 값을 필드에 저장하지 않습니다.
+5. 측정 시간에는 Tool 실행 시간도 포함됩니다. Tool 루프가 `chain.nextCall()` 안(`ChatModel`)에서 돌기 때문입니다.
 
-```java
-@Slf4j
-@Component
-public class RetryAdvisor implements CallAdvisor {
-
-    private static final int MAX_RETRIES = 3;
-
-    @Override
-    public String getName() {
-        return "RetryAdvisor";
-    }
-
-    @Override
-    public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE + 100;
-    }
-
-    @Override
-    public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-
-        Exception lastException = null;
-
-        for (int i = 0; i < MAX_RETRIES; i++) {
-            try {
-                // 같은 체인을 여러 번 호출하려면 copy(this)로 이후 체인을 복제해서 사용합니다
-                return chain.copy(this).nextCall(request);
-            } catch (Exception e) {
-                lastException = e;
-                log.warn("실패 {}회, 재시도 중...", i + 1);
-
-                if (i < MAX_RETRIES - 1) {
-                    try {
-                        Thread.sleep(1000L * (i + 1));  // 선형 백오프 (1초, 2초, ...)
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("재시도 중단", ie);
-                    }
-                }
-            }
-        }
-
-        throw new RuntimeException("최대 재시도 횟수 초과", lastException);
-    }
-}
-```
-
-### 패턴 3: 에러 핸들링 (ErrorHandlingAdvisor)
+`ChatClientConfig`에 등록합니다. 실습이 끝나면 원래대로 되돌립니다.
 
 ```java
-@Slf4j
-@Component
-public class ErrorHandlingAdvisor implements CallAdvisor {
-
-    @Override
-    public String getName() {
-        return "ErrorHandlingAdvisor";
-    }
-
-    @Override
-    public int getOrder() {
-        return 0;
-    }
-
-    @Override
-    public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-
-        try {
-            return chain.nextCall(request);
-
-        } catch (Exception e) {
-            log.error("LLM 호출 실패", e);
-
-            // 사용자 친화적인 에러 메시지 생성
-            String errorMessage = "죄송합니다. 일시적인 오류가 발생했습니다. " +
-                                  "잠시 후 다시 시도해 주세요.";
-
-            throw new RuntimeException(errorMessage, e);
-        }
-    }
-}
+return ChatClient.builder(ollamaChatModel)
+        .defaultAdvisors(new SimpleLoggerAdvisor(), new TimingAdvisor())
+        .build();
 ```
+
+특정 요청에만 적용하려면 `chatClient.prompt().advisors(new TimingAdvisor())...`처럼 요청 단위로 넘깁니다.
+
+### 확인하기
+
+영어 문장으로 Coordinator 검색을 하면 LLM 호출이 한 번 일어나므로 다음 로그가 한 쌍 나옵니다.
+
+```text
+INFO  n.j.f.practice.TimingAdvisor - LLM 요청: flights from Gwangju to Jeju tomorrow
+INFO  n.j.f.practice.TimingAdvisor - LLM 응답: 3874ms
+```
+
+Orchestrator-Workers 패턴으로 검색하면 계획과 종합 단계에서 LLM을 부르므로 로그가 여러 쌍 나옵니다. 몇 쌍인지 세어 보세요(실습 과제 2).
 
 ---
 
-## Advisor 활용 시나리오
+## Step 4-4: Advisor 실행 순서
 
-### 시나리오 1: 개발 환경
+### 왜 필요한가
 
-| 목적 | Advisor 동작 |
-|------|---------------|
-| 디버깅 | `SimpleLoggerAdvisor`로 상세 로그 출력 |
-| 파라미터 확인 | `CustomLoggingAdvisor`로 요청/응답 로깅 |
-| 실행 시간 측정 | `PerformanceMonitoringAdvisor` 적용 |
+Advisor가 여러 개면 순서가 결과를 바꿉니다. 예를 들어 캐시 Advisor가 로깅 Advisor보다 안쪽에 있으면, 캐시에서 바로 응답해도 로그가 남지 않습니다.
 
-### 시나리오 2: 운영 환경
+### 어떻게 하는가
 
-| 목적 | Advisor 동작 |
-|------|---------------|
-| 모니터링 | `PerformanceMonitoringAdvisor`로 통계만 수집 |
-| 안정성 | `RetryAdvisor`, `ErrorHandlingAdvisor` 적용 |
-| 최적화 | `CachingAdvisor`로 응답 캐싱 |
+순서는 등록 순서가 아니라 각 Advisor의 `getOrder()` 값으로 정해집니다. 값이 작을수록 요청을 먼저(바깥쪽에서) 받고, 응답은 거꾸로 나중에 받습니다. `SimpleLoggerAdvisor`의 기본 order는 `0`입니다.
+
+```text
+요청:  [TimingAdvisor -100] → [SimpleLoggerAdvisor 0] → [ChatModel]
+응답:  [TimingAdvisor -100] ← [SimpleLoggerAdvisor 0] ← [ChatModel]
+```
+
+| order 값 | 상수 | 위치 |
+|----------|------|------|
+| 가장 작음 | `Ordered.HIGHEST_PRECEDENCE` | 가장 바깥 (요청을 가장 먼저 받음) |
+| `0` | | `SimpleLoggerAdvisor` 기본값 |
+| 가장 큼 | `Ordered.LOWEST_PRECEDENCE` | 가장 안쪽 (`ChatModel` 바로 앞) |
+
+### 확인하기
+
+`TimingAdvisor.getOrder()`를 `100`으로 바꾸고 다시 실행합니다. `TimingAdvisor`의 "LLM 요청" 로그가 `SimpleLoggerAdvisor`의 request 로그보다 뒤에 찍히면 순서가 바뀐 것입니다.
+
+---
+
+## Step 4-5: Advisor 활용 패턴
+
+실무에서 자주 만드는 Advisor의 모양입니다. 모두 `chain.nextCall()` 앞뒤에 무엇을 하느냐의 차이일 뿐입니다.
+
+| 패턴 | `nextCall()` 앞 | `nextCall()` 뒤 | 권장 order |
+|------|------------------|-----------------|-----------|
+| 캐싱 | 같은 질문의 응답이 캐시에 있으면 `nextCall()` 없이 바로 반환 | 응답을 캐시에 저장 | 가장 바깥 |
+| 오류 변환 | 없음 | 예외를 잡아 사용자용 메시지로 바꿔 다시 던짐 | 바깥 |
+| 측정 | 시작 시각 기록 | 소요 시간·토큰 사용량 기록 | 바깥 |
+| 로깅 | 요청 기록 | 응답 기록 | 안쪽 |
+
+캐싱 Advisor의 핵심은 다음과 같습니다(설명용 예시, Caffeine 같은 캐시 라이브러리가 필요).
+
+```java
+@Override
+public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
+    String key = request.prompt().getUserMessage().getText();
+    ChatClientResponse cached = cache.getIfPresent(key);
+    if (cached != null) {
+        return cached;                          // LLM을 부르지 않음
+    }
+    ChatClientResponse response = chain.nextCall(request);
+    cache.put(key, response);
+    return response;
+}
+```
+
+> **주의**: 재시도 Advisor는 따로 만들지 않는 편이 좋습니다. Spring AI는 모델 호출 단계에서 이미 재시도를 하고, 이 프로젝트는 `spring.ai.retry`로 최대 2회까지로 줄여 두었습니다(Step 1). 재시도 Advisor를 더하면 재시도 횟수가 곱절로 늘어납니다. 오류를 사용자용 문장으로 바꾸는 일도 이 프로젝트에서는 Advisor 대신 `ChatClientProvider.describeError()`가 맡습니다(Step 2).
 
 ---
 
 ## 일반적인 문제 해결
 
-### 문제 1: 로그가 출력되지 않음
+### SimpleLoggerAdvisor 로그가 나오지 않음
 
-**증상:** SimpleLoggerAdvisor가 동작하지 않음
+1. `logging.level.org.springframework.ai.chat.client.advisor: DEBUG`를 추가했는지 확인합니다. `org.springframework.ai`만 올려도 됩니다.
+2. 그 요청이 실제로 LLM을 불렀는지 확인합니다. Coordinator 패턴의 한국어 문장은 정규식으로 처리되어 LLM을 부르지 않습니다.
+3. `ChatClientConfig`의 `defaultAdvisors(...)`가 지워지지 않았는지 확인합니다.
 
-**해결 방법:**
-1. `application.yml`에 로그 레벨 설정 확인
-2. Advisor가 ChatClient에 등록되었는지 확인
-3. Spring Boot 로그 설정 확인
+### Advisor 로그에 Tool 호출이 보이지 않음
 
-```yaml
-logging:
-  level:
-    org.springframework.ai: DEBUG
-```
+정상입니다. 기본 설정에서 Tool 루프는 `ChatModel` 안에서 돌므로 Advisor에는 최종 응답만 보입니다. Tool 호출은 Tool 메서드의 로그나 응답의 `trace`(TOOL 단계)로 확인합니다.
 
-### 문제 2: 성능 저하
+### TOOL 단계가 비어 있거나 다른 요청의 기록이 섞임
 
-**증상:** Advisor 추가 후 응답 시간이 느려짐
+1. Tool 메서드가 `ToolResultCapture.capture(...)`로 작업을 감쌌는지 확인합니다. 직접 만든 Tool이라면 이 부분이 빠지기 쉽습니다.
+2. `stream()`을 쓰고 있지 않은지 확인합니다. 다른 스레드에서 Tool이 실행되면 `ThreadLocal`에 기록되지 않습니다.
+3. `ToolResultCaptureCleanupFilter`가 빈으로 등록되어 있는지(`@Component`) 확인합니다.
 
-**해결 방법:**
-1. 불필요한 Advisor 제거
-2. 로그 레벨을 WARN으로 조정
-3. 캐싱 적용
+### Advisor 순서가 예상과 다름
 
-### 문제 3: Advisor 실행 순서
-
-**증상:** 예상과 다른 순서로 Advisor가 실행됨
-
-**해결 방법:**
-
-Advisor의 실행 순서는 각 Advisor의 `getOrder()` 값으로 결정됩니다. 값이 작을수록 먼저(바깥쪽에서) 실행되며, 값이 같을 때만 등록 순서를 따릅니다. `SimpleLoggerAdvisor`의 기본 order는 `0`이므로, 원하는 순서가 있다면 `getOrder()` 값을 명시적으로 지정합니다.
-
-```java
-.defaultAdvisors(
-    new CachingAdvisor(),          // order: HIGHEST_PRECEDENCE       → 1. 먼저 캐시 확인
-    new RetryAdvisor(),            // order: HIGHEST_PRECEDENCE + 100 → 2. 실패 시 재시도
-    new SimpleLoggerAdvisor()      // order: 0                         → 3. 마지막으로 로깅
-)
-```
+등록 순서가 아니라 `getOrder()` 값이 순서를 정합니다. 값이 같을 때만 등록 순서를 따르므로, 순서가 중요하면 값을 명시합니다.
 
 ---
 
 ## 실습 과제
 
-1. **(기본)** `org.springframework.ai.chat.client.advisor` 로거를 DEBUG로 올리고 `POST /api/search/tool-calling`을 호출하세요. `SimpleLoggerAdvisor`의 request 로그에 Tool 정의가 포함되는지, `POST /api/search/coordinator`에 영어 문장을 보냈을 때의 request 로그에는 Tool 정의가 없는지 비교하세요.
-2. **(기본)** 본문의 `CustomLoggingAdvisor`를 만들어 `ollamaChatClient`에 등록하고, Orchestrator 패턴으로 검색했을 때 한 번의 요청에서 LLM 호출이 몇 번 일어나는지 로그로 세어 보세요.
-3. **(도전)** `ToolResultCaptureTest`의 `capturesInOrder()`와 `recordsFailure()`를 읽고, 성공하는 `Supplier`와 예외를 던지는 `Supplier`를 차례로 `capture()`했을 때 `getAndClear()`가 두 건을 호출 순서대로 돌려주며 두 번째 기록만 `failed()`가 `true`이고 `error`에 예외 메시지가 담기는지 확인하는 테스트를 작성하세요.
-4. **(도전)** `ToolCallAdvisor`를 등록해 Tool 호출 루프를 Advisor 체인에서 수행하게 바꾸고, `SimpleLoggerAdvisor` 로그에 Tool 호출 단계마다 요청/응답이 찍히는지 확인하세요. 실험이 끝나면 원래대로 되돌리세요.
+### 과제 1 (기본): Tool 정의가 붙는 요청 구분하기
+
+Step 4-1의 로그 설정을 켜고 `POST /api/search/tool-calling`(한국어 문장)과 `POST /api/search/coordinator`(영어 문장)를 각각 호출합니다.
+
+- 힌트: `SimpleLoggerAdvisor`의 request 로그에서 `toolCallbacks` 또는 Tool 이름(`searchFlightsByAirline`)을 찾습니다.
+- 완료 기준: Tool Calling 요청에는 Tool 정의가 있고 Coordinator의 검색 조건 추출 요청에는 없다는 것을 로그 일부를 인용해 보인다.
+
+### 과제 2 (기본): 한 번의 검색에서 LLM 호출 횟수 세기
+
+Step 4-3의 `TimingAdvisor`를 `ollamaChatClient`(또는 키가 있다면 `geminiChatClient`)에 등록하고, 세 패턴으로 같은 문장을 검색합니다.
+
+- 힌트: "LLM 요청" 로그의 개수, 응답 `trace`에서 `kind`가 `LLM`인 단계의 개수
+- 완료 기준: 세 패턴의 LLM 호출 횟수와 총 소요 시간을 표로 정리하고, 로그 개수와 `trace`의 LLM 단계 개수가 일치하는지 확인한다.
+
+### 과제 3 (도전): ToolResultCapture 테스트 추가
+
+`ToolResultCaptureTest`에 "성공 → 실패 → 성공" 순서로 세 번 `capture()`한 뒤 `getAndClear()`를 확인하는 테스트를 추가합니다.
+
+- 힌트: 기존 `capturesInOrder()`와 `recordsFailure()`를 본뜨고, 실패하는 호출은 `assertThatThrownBy`로 감쌉니다.
+- 완료 기준: 기록이 세 건이고 순서가 유지되며, 두 번째만 `failed()`가 `true`이고 `error`에 예외 메시지가 담긴다는 단언이 `./mvnw test -Dtest=ToolResultCaptureTest`로 통과한다.
+
+### 과제 4 (도전): ToolCallAdvisor로 Tool 루프 옮기기
+
+Spring AI 1.1의 `ToolCallAdvisor`를 등록하면 Tool 호출 루프가 `ChatModel` 대신 Advisor 체인에서 돕니다. `ollamaChatClient`에 `ToolCallAdvisor`를 등록하고 `POST /api/search/tool-calling`을 호출합니다.
+
+- 힌트: `ToolCallAdvisor.builder().build()`, `SimpleLoggerAdvisor`보다 바깥쪽 order
+- 완료 기준: `SimpleLoggerAdvisor`의 request/response 로그가 Tool 호출 단계마다 찍히는 것을 확인하고, 기본 방식과의 차이를 두세 문장으로 정리한다. 실험 뒤 원래대로 되돌린다.
 
 ---
 
 ## 요약
 
-이번 단계에서는 Advisor를 사용하여 Function Calling의 실행 과정을 모니터링하는 방법을 배웠습니다:
+- Advisor는 ChatClient 요청 전과 응답 후에 공통 처리를 끼워 넣는 구성 요소이며, `CallAdvisor.adviseCall()`의 `chain.nextCall()` 앞뒤가 그 자리입니다.
+- `SimpleLoggerAdvisor`는 모든 LLM 호출에 필요하므로 기본 등록하고, 로그는 `org.springframework.ai.chat.client.advisor`를 DEBUG로 올려 봅니다.
+- 기본 설정에서 Tool 루프는 `ChatModel` 안에서 돌기 때문에 Advisor에 보이지 않습니다. 그래서 Tool 메서드가 `ToolResultCapture.capture()`로 호출을 기록하고, 서비스가 `getAndClear()`로 꺼내 `trace`의 TOOL 단계로 남깁니다.
+- 여러 Advisor의 순서는 `getOrder()` 값이 정하며, 작을수록 바깥쪽입니다.
 
-1. **SimpleLoggerAdvisor**: Spring AI에서 제공하는 기본 로깅 Advisor로, `.defaultAdvisors(new SimpleLoggerAdvisor())` 한 줄로 요청/응답 로깅을 활성화했습니다. Advisor는 모든 호출에 필요하므로 기본 등록하고, Tool은 필요한 요청에만 넘깁니다
-2. **ToolResultCapture**: 기본 Advisor에는 Tool 호출이 보이지 않으므로, Tool 메서드가 `capture(이름, 인자 요약, () -> 작업)`으로 작업을 실행하면서 호출 기록(결과·실패·실행 시각)을 남기고, 서비스가 `getAndClear()`로 꺼내 실행 기록에 씁니다
-3. **CallAdvisor 인터페이스**: `adviseCall()` 안에서 `chain.nextCall()` 앞뒤로 로직을 실행하는 Around Advice 패턴으로, 실행 시간 측정이나 상세 로깅 같은 커스텀 로직을 구현했습니다
-4. **Advisor 파이프라인**: 여러 Advisor를 등록하면 `getOrder()` 값이 작은 순서대로 실행되며, 응답은 역순으로 처리됩니다
-5. **실전 활용**: 개발 환경에서는 상세 로깅, 운영 환경에서는 성능 모니터링과 캐싱 Advisor를 조합하여 사용합니다
-
-여기까지 Step 1~4를 통해 Spring AI의 기본 설정부터 ChatClient 사용, Function Calling, 그리고 실행 과정 모니터링까지 모두 학습했습니다.
+Step 1~4에서 Spring AI의 기본기(설정, ChatClient, Function Calling, Advisor)를 익혔습니다. Step 5부터는 이 기본기로 여러 Tool을 체계적으로 설계하고, 전문 에이전트와 세 가지 검색 패턴을 만들어 갑니다.
 
 ---
 
 ## 체크리스트
 
-- [ ] `SimpleLoggerAdvisor`가 ChatClient에 등록됨 (`ChatClientConfig`에서 확인)
-- [ ] Advisor는 기본 등록하고 Tool은 요청마다 넘기는 이유를 설명할 수 있음
-- [ ] `ToolResultCapture.capture()`와 `getAndClear()`의 역할을 이해함
-- [ ] 콘솔에서 요청/응답 로그 확인됨
-- [ ] 로그 레벨이 DEBUG로 설정됨
-- [ ] `CustomLoggingAdvisor`가 필요에 따라 구현됨
-- [ ] `PerformanceMonitoringAdvisor`로 성능 측정
-- [ ] 운영 환경에 맞는 Advisor 구성 완료
+- [ ] Advisor가 ChatClient 호출의 어느 지점에 끼어드는지 그림으로 설명할 수 있다. (목표 1)
+- [ ] `SimpleLoggerAdvisor` 로그를 켜고 Tool Calling 요청의 request·response 로그를 확인했다. (목표 2)
+- [ ] Advisor에 Tool 호출이 보이지 않는 이유와 `ToolResultCapture.capture()`, `getAndClear()`의 역할을 설명하고, 응답 `trace`의 TOOL 단계를 확인했다. (목표 3)
+- [ ] `CallAdvisor`를 구현한 `TimingAdvisor`를 만들어 등록하고 소요 시간 로그를 확인했다. (목표 4)
+- [ ] `getOrder()` 값을 바꿔 Advisor 실행 순서가 바뀌는 것을 확인했다. (목표 5)
 
 ---
 
 ## 다음 단계
 
-[**Step 5: 다중 Function Calling과 MCP Tool 패턴**](step-5-mcp-tool-pattern.md)에서 여러 Tool을 효과적으로 관리하는 방법을 학습합니다.
+[Step 5: 다중 Function Calling과 MCP Tool 패턴](step-5-mcp-tool-pattern.md)에서 여러 Tool을 역할별로 나누고 관리하는 방법을 배웁니다.
 
 ---
 
@@ -760,65 +458,24 @@ Advisor의 실행 순서는 각 Advisor의 `getOrder()` 값으로 결정됩니�
 
 ## 심화 학습
 
-### Advisor 실행 순서 이해
-
-Advisor는 **파이프라인 패턴**으로 실행됩니다. 순서는 `getOrder()` 값이 작은 Advisor부터입니다.
-
-```text
-요청 → [Advisor1] → [Advisor2] → [Advisor3] → ChatModel
-응답 ← [Advisor1] ← [Advisor2] ← [Advisor3] ← ChatModel
-```
-
-```java
-.defaultAdvisors(
-    new CachingAdvisor(),           // 1. 요청 → 캐시 확인 (HIGHEST_PRECEDENCE)
-    new RetryAdvisor(),             // 2. 요청 → 재시도 로직 (HIGHEST_PRECEDENCE + 100)
-    new SimpleLoggerAdvisor()       // 3. 요청/응답 → 로깅 (0)
-)
-```
-
-**실행 순서:**
-1. **요청 시:** CachingAdvisor → RetryAdvisor → SimpleLoggerAdvisor → ChatModel
-2. **응답 시:** SimpleLoggerAdvisor → RetryAdvisor → CachingAdvisor → 사용자
-
 ### Spring AI 내장 Advisor
 
 | Advisor | 용도 | 설명 |
 |---------|------|------|
-| `SimpleLoggerAdvisor` | 로깅 | 요청/응답을 간단히 로깅 |
-| `MessageChatMemoryAdvisor` | 메모리 | 대화 기록을 메시지 목록으로 프롬프트에 추가 |
-| `PromptChatMemoryAdvisor` | 메모리 | 대화 기록을 시스템 프롬프트 텍스트에 추가 |
+| `SimpleLoggerAdvisor` | 로깅 | 요청·응답을 DEBUG 로그로 남김 |
+| `MessageChatMemoryAdvisor` | 대화 기록 | 이전 대화를 메시지 목록으로 프롬프트에 추가 |
+| `PromptChatMemoryAdvisor` | 대화 기록 | 이전 대화를 시스템 프롬프트 텍스트에 추가 |
 | `SafeGuardAdvisor` | 보안 | 금지어가 포함된 요청을 차단 |
-| `QuestionAnswerAdvisor` | RAG | 문서 검색 결과를 컨텍스트에 추가 (`spring-ai-advisors-vector-store` 모듈) |
-| `VectorStoreChatMemoryAdvisor` | 메모리(벡터 저장소) | 대화 기록을 벡터 DB에 저장하고 관련 기록을 검색 (`spring-ai-advisors-vector-store` 모듈) |
+| `ToolCallAdvisor` | Tool 실행 | Tool 호출 루프를 Advisor 체인에서 수행 |
+| `QuestionAnswerAdvisor` | RAG | 벡터 저장소에서 찾은 문서를 프롬프트에 추가 (`spring-ai-advisors-vector-store` 모듈) |
+| `VectorStoreChatMemoryAdvisor` | 대화 기록 | 대화를 벡터 저장소에 저장하고 관련 기록을 찾아 추가 (`spring-ai-advisors-vector-store` 모듈) |
 
-### 사용자 정의 Advisor 구현 시 주의사항
+### Advisor로 Tool 호출을 기록하지 않은 이유
 
-1. **순서 의존성:** 캐싱은 가장 먼저, 로깅은 가장 나중에
-2. **스레드 안전성:** 여러 요청이 동시에 처리됨을 고려
-3. **성능 고려:** 무거운 로직은 비동기로 처리
-4. **에러 처리:** 적절한 예외 처리 및 로깅
+`ToolCallAdvisor`를 쓰면 Advisor 체인에서 Tool 단계마다 요청·응답을 볼 수 있으므로, 이론상 Advisor로도 Tool 호출을 기록할 수 있습니다. 그래도 이 프로젝트가 Tool 메서드 쪽에서 기록하는 데는 이유가 있습니다.
 
-```java
-// 좋은 예
-@Override
-public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
+- Tool의 실제 실행 구간(시작·종료 시각)과 실패 여부를 가장 정확히 아는 곳은 Tool 메서드 자신입니다.
+- LLM 없이 Tool을 직접 부르는 경로(`McpController`, 단위 테스트)에서도 같은 기록 방식이 동작합니다.
+- 기본 Tool 실행 방식을 바꾸지 않아도 되므로, Spring AI 버전이 바뀌어도 영향이 적습니다.
 
-    try {
-        // 전처리
-        log.debug("요청 수신: {}", request.prompt().getUserMessage().getText());
-
-        // 체인 호출
-        ChatClientResponse response = chain.nextCall(request);
-
-        // 후처리
-        log.debug("응답 반환: {}", response.chatResponse().getResult().getOutput().getText());
-
-        return response;
-
-    } catch (Exception e) {
-        log.error("Advisor 실행 중 오류", e);
-        throw e;  // 반드시 다시 던지기
-    }
-}
-```
+> **생각해 보기**: 반대로 Tool 메서드마다 `capture(...)`를 써야 한다는 점은 단점입니다. Tool이 수십 개로 늘어난다면 어떤 방식이 나을까요?

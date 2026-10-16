@@ -1,14 +1,18 @@
 # Step 11: Orchestrator-Workers 패턴 — LLM이 작업을 나누고 종합하기
 
+Step 9의 Coordinator 패턴은 코드가 처리 순서를 정했고, Step 10의 Tool Calling 에이전트는 LLM이 Tool을 하나씩 골라 불렀습니다. 이번 Step에서는 두 방식의 장점을 조합합니다. LLM은 "무엇을 검색할지"를 계획하고 결과를 종합하며, 실제 검색은 Step 9에서 만든 Coordinator의 검색 단계를 여러 개 동시에 실행해 처리합니다.
+
+**이 Step에서 만들 것**: "이번 주 금요일이나 토요일에 김포나 광주에서 제주 가는 제일 싼 항공편 찾아줘"처럼 조건이 여러 개인 요청을 받아, LLM이 검색 작업 4개로 나누고, Worker 4개가 가상 스레드에서 동시에 검색한 뒤, LLM이 결과를 비교해 추천하는 `POST /api/search/orchestrator` 엔드포인트입니다. 화면(`/`)의 실행 기록에서는 WORKER 막대 4개가 같은 시점에 시작해 겹쳐 보입니다.
+
 ## 학습 목표
 
-이 단계를 마치면 다음을 할 수 있습니다.
+이 Step을 마치면 다음을 할 수 있습니다.
 
-1. **Orchestrator-Workers 패턴**이 무엇인지, 어떤 요청에 필요한지 설명할 수 있다
-2. Structured Output(`.entity(SearchPlan.class)`)으로 LLM에게 **작업 계획**을 받고, 그 계획을 **코드로 검증**할 수 있다
-3. Step 9의 Coordinator 검색 단계를 **Worker로 재사용**해 패턴을 조합할 수 있다
-4. **가상 스레드**와 `CompletableFuture`로 Worker를 병렬 실행하고, 실행 기록에서 병렬성을 확인할 수 있다
-5. 세 가지 패턴(Coordinator, Tool Calling 에이전트, Orchestrator-Workers)과 A2A 프로토콜을 비교해 **상황에 맞는 패턴을 고를 수 있다**
+1. Orchestrator-Workers 패턴이 무엇인지, Coordinator 패턴으로는 처리할 수 없는 요청이 무엇인지 설명할 수 있다.
+2. Structured Output(`.entity(SearchPlan.class)`)으로 LLM에게 작업 계획을 받고, 그 계획을 `validate()`에서 코드로 검증할 수 있다.
+3. Step 9의 `FlightSearchCoordinator.search()`를 Worker로 재사용해 패턴을 조합하고, 작업 하나의 실패를 격리할 수 있다.
+4. 가상 스레드와 `CompletableFuture`로 Worker를 병렬 실행하고, 실행 기록과 테스트로 병렬 실행을 확인할 수 있다.
+5. 세 가지 패턴(Coordinator, Tool Calling 에이전트, Orchestrator-Workers)과 A2A 프로토콜을 비교해 상황에 맞는 패턴을 고를 수 있다.
 
 ---
 
@@ -34,8 +38,7 @@
 SearchResponse { pattern: "orchestrator", message: 추천 답변, results: [작업 4개], trace }
 ```
 
-> 💡 **핵심 개념**: Orchestrator-Workers 패턴에서 LLM은 **무엇을 할지(계획)**와 **결과가 무슨 뜻인지(종합)**만 결정합니다.
-> 실제 검색은 Worker가 코드로 병렬 실행합니다. 하위 작업의 **개수와 내용이 미리 정해져 있지 않다**는 점이 Coordinator 패턴과 가장 큰 차이입니다.
+이 패턴에서 LLM은 무엇을 할지(계획)와 결과가 무슨 뜻인지(종합)만 결정합니다. 실제 검색은 Worker가 코드로 병렬 실행합니다. 하위 작업의 **개수와 내용이 미리 정해져 있지 않다**는 점이 Coordinator 패턴과 가장 큰 차이입니다.
 
 ---
 
@@ -43,7 +46,7 @@ SearchResponse { pattern: "orchestrator", message: 추천 답변, results: [작�
 
 ### 정의
 
-Anthropic의 글 "Building effective agents"는 워크플로 패턴의 하나로 **orchestrator-workers**를 소개합니다.
+**Orchestrator-Workers 패턴**(orchestrator-workers)은 중앙의 LLM(Orchestrator)이 요청을 하위 작업으로 나누고, Worker가 각 작업을 처리하고, 다시 LLM이 결과를 종합하는 패턴입니다. Anthropic의 글 "Building effective agents"는 이 패턴을 워크플로 패턴의 하나로 다음과 같이 소개합니다.
 
 > 중앙의 LLM이 작업을 동적으로 나누어 Worker에게 맡기고, 그 결과를 종합한다.
 > 필요한 하위 작업을 **미리 예측할 수 없을 때** 적합하다. 병렬화(parallelization)와 비슷해 보이지만,
@@ -56,7 +59,7 @@ Anthropic의 글 "Building effective agents"는 워크플로 패턴의 하나로
 | Orchestrator(종합) | Worker 결과를 모아 최종 답을 만든다 | `ResultSynthesizer` (LLM) |
 | 전체 지휘 | 계획 → 병렬 실행 → 종합 순서를 이어 준다 | `FlightSearchOrchestrator` |
 
-> ⚠️ 용어 주의: Step 9의 **Coordinator**는 "코드가 순서를 정하는 순차 워크플로"이고, 이번 단계의 **Orchestrator**는 "LLM이 작업을 동적으로 나누는 지휘자"입니다. 이 교재에서는 두 말을 섞어 쓰지 않습니다.
+> **주의**: Step 9의 Coordinator는 "코드가 순서를 정하는 순차 워크플로"이고, 이번 Step의 Orchestrator는 "LLM이 작업을 동적으로 나누는 지휘자"입니다. 우리말로는 둘 다 "조정자"처럼 들리지만 이 교재에서는 두 말을 섞어 쓰지 않습니다.
 
 ### 왜 이 요청에는 Orchestrator-Workers가 필요한가
 
@@ -75,11 +78,11 @@ Anthropic의 글 "Building effective agents"는 워크플로 패턴의 하나로
 
 Coordinator의 처리 순서는 "조건 하나 → 검색 하나"로 **코드에 고정**되어 있습니다. 조건이 몇 개로 나뉠지 모르는 요청은 표현할 수 없습니다.
 
-**Tool Calling 에이전트로 처리하면** LLM이 `searchFlightsByAirline`을 네 번 부를 수도 있습니다. 하지만
+**Tool Calling 에이전트로 처리하면** LLM이 `searchFlightsByAirline`을 네 번 부를 수도 있습니다. 하지만 다음 한계가 있습니다.
 
-- 네 번을 모두 부를지는 모델에 달려 있고(작은 모델은 한두 번 부르고 답하기 쉽습니다),
-- Tool 호출은 LLM 왕복마다 **순차로** 일어나므로 검색 4번 + LLM 왕복 5번이 줄지어 기다리며,
-- 화면에는 마지막 검색 결과 하나만 남습니다(`lastFlightResult`).
+- 네 번을 모두 부를지는 모델에 달려 있습니다. 작은 모델은 한두 번 부르고 답하기 쉽습니다.
+- Tool 호출은 LLM 왕복마다 순차로 일어나므로 검색 4번과 LLM 왕복 5번이 줄지어 기다립니다.
+- 화면에는 마지막 검색 결과 하나만 남습니다(Step 10의 `lastFlightResult()`).
 
 **Orchestrator-Workers로 처리하면** LLM은 계획에서 "작업 4개"를 정하고, 코드가 4개를 **동시에** 실행하고, LLM이 4개 결과를 **한 번에** 비교합니다. LLM 호출은 작업 수와 관계없이 2번입니다.
 
@@ -113,8 +116,11 @@ public record SearchPlan(
 }
 ```
 
-작업 하나는 Step 9에서 만든 `SearchCriteria`(출발, 도착, 날짜, 시간·가격 조건) 그대로입니다. 그래서 Worker가 Coordinator의 검색 단계를 바로 재사용할 수 있습니다.
-`reasoning`은 결과에는 쓰지 않지만, LLM이 **먼저 이유를 적고 나서 목록을 만들게** 해 작업 분해 품질을 높이는 효과가 있습니다.
+코드 읽기
+
+- `tasks`: 작업 하나는 Step 9에서 쓴 `SearchCriteria`(출발, 도착, 날짜, 시간·가격 조건) 그대로입니다. 그래서 Worker가 Coordinator의 검색 단계를 바로 재사용할 수 있습니다.
+- `reasoning`: 결과에는 쓰지 않습니다. 하지만 필드 순서상 LLM이 먼저 이유를 적고 나서 목록을 만들게 되어 작업 분해 품질을 높이는 효과가 있습니다.
+- `@JsonPropertyDescription`: Structured Output이 만드는 JSON 스키마에 들어가는 필드 설명입니다. LLM은 이 설명을 보고 값을 채웁니다.
 
 ### 계획 요청
 
@@ -146,8 +152,8 @@ public SearchPlan plan(String message, ChatClient chatClient) {
 | 오늘 날짜와 **요일**(`THURSDAY` 등) | "이번 주 금요일"을 계산하려면 오늘이 무슨 요일인지 알아야 합니다 |
 | 한글 공항 이름, 없으면 `null` | `AirportCodeAgent`가 변환할 수 있는 형태로 받습니다 |
 
-`.entity(SearchPlan.class)`는 Spring AI의 Structured Output입니다. 레코드와 `@JsonPropertyDescription`으로 JSON 스키마를 만들어 프롬프트에 붙이고, LLM의 JSON 응답을 `SearchPlan`으로 바꿔 줍니다.
-이 호출에는 `.tools(...)`가 없습니다. `ChatClientConfig`에서 `defaultTools`를 등록하지 않았기 때문에 계획 LLM이 Tool을 부를 일이 없습니다(Step 10 참고).
+`.entity(SearchPlan.class)`는 Spring AI의 **Structured Output**(구조화된 출력, LLM 응답을 정해진 Java 타입으로 받는 기능)입니다. 레코드와 `@JsonPropertyDescription`으로 JSON 스키마를 만들어 프롬프트에 붙이고, LLM의 JSON 응답을 `SearchPlan`으로 바꿔 줍니다.
+이 호출에는 `.tools(...)`가 없습니다. `ChatClientConfig`에서 `defaultTools`를 등록하지 않았으므로 계획 LLM이 Tool을 부를 일이 없습니다(Step 10 참고).
 
 ### validate(): LLM이 만든 계획을 그대로 믿지 않는다
 
@@ -198,11 +204,23 @@ private String departureCode(SearchCriteria task) {
 
 `validate()`가 `IllegalArgumentException`을 던지면 `FlightSearchOrchestrator`가 받아 `success: false`와 안내 문구로 응답하고, Worker와 종합 단계는 실행하지 않습니다.
 
-> 💡 `validate()`는 패키지 접근 수준이라 테스트에서 LLM 없이 바로 호출할 수 있습니다. 검증 로직을 LLM 호출과 분리해 두면 테스트가 쉬워집니다.
+> **팁**: `validate()`는 패키지 접근 수준이라 같은 패키지의 테스트에서 LLM 없이 바로 호출할 수 있습니다. 검증 로직을 LLM 호출과 분리해 두면 테스트가 쉬워집니다.
+
+### 확인하기
+
+LLM 없이 계획 검증만 테스트로 확인해 보세요.
+
+```bash
+./mvnw test -Dtest=FlightSearchPlannerTest
+```
+
+`dropsInvalidTasks`, `dedupeAndLimit`, `normalizesAirportNames` 등이 모두 통과하면 됩니다. 테스트 내용은 Step 11-7에서 자세히 봅니다.
 
 ---
 
 ## Step 11-2: FlightSearchWorker — Coordinator를 재사용하는 Worker
+
+**Worker**는 Orchestrator가 맡긴 하위 작업 하나를 처리하는 컴포넌트입니다. 검색 로직을 새로 만들 필요는 없습니다. Step 9에서 Coordinator의 2~7단계를 `public search(criteria, trace)`로 분리해 두었기 때문입니다.
 
 `src/main/java/net/java21/flyschedule/service/orchestrator/FlightSearchWorker.java`
 
@@ -255,6 +273,16 @@ Worker는 새 검색 로직을 만들지 않고 Step 9의 `FlightSearchCoordinat
 
 그래서 4개 중 1개가 실패해도 나머지 3개의 결과로 추천할 수 있습니다. 종합 단계에서는 빈 결과가 `"김포 → 제주 · 2026-10-16: 항공편 없음"`으로 표현됩니다.
 
+> **생각해 보기**: 지금은 "검색 실패"와 "실제로 항공편이 없음"이 같은 문장으로 LLM에 전달됩니다. 사용자에게는 어떤 차이가 생길까요? (실습 과제 2에서 고쳐 봅니다.)
+
+### 확인하기
+
+`FlightSearchOrchestratorTest`의 `workerFailureIsolated`와 `workerSharesTrace`가 이 두 성질(실패 격리, 같은 `trace` 공유)을 검증합니다.
+
+```bash
+./mvnw test -Dtest='FlightSearchOrchestratorTest#workerFailureIsolated+workerSharesTrace'
+```
+
 ---
 
 ## Step 11-3: FlightSearchOrchestrator — 가상 스레드로 병렬 실행
@@ -297,7 +325,12 @@ public SearchResponse orchestrate(String message, String model) {
 }
 ```
 
-계획과 종합 단계에 **같은 `chatClient`**를 씁니다. 화면에서 고른 모델(Ollama 또는 Gemini)이 두 번의 LLM 호출 모두에 쓰입니다.
+코드 읽기
+
+1. `ChatClientProvider.normalize(model)`: 실행 기록의 actor에 쓸 모델 이름("ollama" 또는 "gemini")입니다.
+2. 계획과 종합 단계에 같은 `chatClient`를 씁니다. 화면에서 고른 모델이 두 번의 LLM 호출 모두에 쓰입니다.
+3. 계획 단계의 `trace.run(...)` 마지막 인자는 실행 기록의 `detail`을 만드는 함수입니다. `"4개 작업: 김포 → 제주 · 2026-10-16 / ..."`처럼 계획 내용이 기록에 남습니다.
+4. `IllegalArgumentException`(계획 검증 실패, Gemini 키 없음)은 메시지를 그대로, 그 밖의 예외는 `describeError(e)`로 안내 문장을 만들어 `success: false`로 응답합니다.
 
 ### runWorkers(): 가상 스레드 + CompletableFuture
 
@@ -320,7 +353,7 @@ private List<TaskResult> runWorkers(List<SearchCriteria> tasks, ExecutionTrace t
 | 먼저 `toList()`로 모두 제출 | 스트림 하나에서 `supplyAsync`와 `join`을 이어 쓰면 하나씩 제출·대기하게 되어 **순차 실행**이 됩니다 |
 | `futures.stream().map(join)` | 모두 끝날 때까지 기다리며, 결과는 **계획의 작업 순서대로** 모입니다 |
 
-**왜 가상 스레드인가?** Worker의 시간 대부분은 공공데이터 포털 API 응답을 **기다리는 시간**(블로킹 I/O)입니다. 가상 스레드는 기다리는 동안 OS 스레드(캐리어)를 내어 주므로, 블로킹 코드(`RestClient`)를 그대로 쓰면서도 스레드 풀 크기를 고민하지 않고 동시에 실행할 수 있습니다.
+**왜 가상 스레드인가?** **가상 스레드**(virtual thread)는 JVM이 관리하는 가벼운 스레드로, 수천 개를 만들어도 부담이 적습니다. Worker의 시간 대부분은 공공데이터 포털 API 응답을 기다리는 시간(블로킹 I/O)입니다. 가상 스레드는 기다리는 동안 OS 스레드(캐리어 스레드)를 내어 주므로, 블로킹 코드(`RestClient`)를 그대로 쓰면서도 스레드 풀 크기를 고민하지 않고 동시에 실행할 수 있습니다.
 
 `worker.execute()`가 `RuntimeException`을 모두 잡으므로 `join()`이 예외를 던지는 일은 없습니다. 한 Worker의 실패가 전체 요청을 무너뜨리지 않습니다.
 
@@ -348,7 +381,7 @@ private static String threadName() {
 - 가상 스레드는 기본 이름이 빈 문자열입니다. 그대로 두면 화면에서 어느 Worker가 어느 스레드였는지 구분할 수 없으므로 `virtual-{id}`로 표시합니다.
 - `order`는 **기록된 순서**입니다. `trace.run()`은 작업이 끝난 뒤 기록하므로, Worker 내부의 CODE 단계가 해당 WORKER 단계보다 먼저 번호를 받습니다. 실제 시작 시각은 `startMs`를 보세요.
 
-> 참고: Java 21에서는 가상 스레드가 `synchronized` 블록 안에 있는 동안 캐리어 스레드에 고정(pinning)됩니다. 여기서는 목록에 한 줄 추가하는 짧은 구간이라 문제가 없지만, 블록 안에서 I/O를 하면 병렬성이 떨어집니다. (이 제약은 JDK 24의 JEP 491에서 풀렸습니다.)
+> **주의**: Java 21에서는 가상 스레드가 `synchronized` 블록 안에 있는 동안 캐리어 스레드에 고정(pinning)됩니다. 여기서는 목록에 한 줄 추가하는 짧은 구간이라 문제가 없지만, 블록 안에서 I/O를 하면 병렬성이 떨어집니다. (이 제약은 JDK 24의 JEP 491에서 풀렸습니다.)
 
 ---
 
@@ -417,8 +450,16 @@ String fallbackSummary(List<TaskResult> results) {
 }
 ```
 
-종합 LLM 호출이 실패해도 Worker가 이미 모은 검색 결과는 버리지 않습니다. 코드로 "최저가 하나"를 골라 답하므로 사용자는 항상 결과를 받습니다.
-종합은 "있으면 좋은" 단계이므로 실패를 삼키고, 계획은 "없으면 진행할 수 없는" 단계이므로 실패를 그대로 알립니다. **단계의 중요도에 따라 실패 처리 방식을 다르게** 정한 것입니다.
+종합 LLM 호출이 실패하거나 빈 답을 돌려줘도 Worker가 이미 모은 검색 결과는 버리지 않습니다. 코드로 최저가 하나를 골라 답하므로 사용자는 항상 결과를 받습니다.
+종합은 "있으면 좋은" 단계이므로 실패를 삼키고, 계획은 "없으면 진행할 수 없는" 단계이므로 실패를 그대로 알립니다. 단계의 중요도에 따라 실패 처리 방식을 다르게 정한 것입니다.
+
+### 확인하기
+
+```bash
+./mvnw test -Dtest=ResultSynthesizerTest
+```
+
+`sendsSummariesToLlm`(요약 한 줄씩만 전달), `fallbackOnFailure`, `fallbackWhenAllEmpty`가 통과하면 됩니다.
 
 ---
 
@@ -441,7 +482,7 @@ String fallbackSummary(List<TaskResult> results) {
 
 ### 화면에서 확인하기
 
-`http://localhost:8080/`에서 **복합** 예시(금·토 × 김포·광주 → 제주)를 고르고 세 패턴을 모두 실행해 보세요.
+`http://localhost:8080/`에서 "복합" 예시(금·토 × 김포·광주 → 제주)를 고르고 세 패턴을 모두 실행해 보세요.
 
 - 패널 위 통계: `LLM 2회`, `Worker 4개`, `코드 단계 20개`(Worker마다 날짜 변환·공항 코드 변환 2회·API 호출·그룹핑)
 - 실행 기록: WORKER 막대 4개가 나란히 겹치고, 각 줄 끝에 `· virtual-NN` 스레드 이름이 서로 다르게 표시됩니다
@@ -500,7 +541,7 @@ curl -X POST http://localhost:8080/api/search/orchestrator \
 }
 ```
 
-> 숫자·항공편은 예시입니다. WORKER 단계의 `startMs`가 거의 같고 `thread`가 서로 다르다는 점, WORKER의 `order`가 끝난 순서대로 매겨진다는 점을 확인하세요.
+> **팁**: 숫자·항공편은 예시입니다. WORKER 단계의 `startMs`가 거의 같고 `thread`가 서로 다르다는 점, WORKER의 `order`가 끝난 순서대로 매겨진다는 점을 확인하세요.
 
 ---
 
@@ -605,7 +646,9 @@ assertThat(userMessage.getValue())
 
 ---
 
-## 패턴 총정리
+## Step 11-8: 패턴 총정리 — 어떤 패턴을 고를까
+
+Step 9부터 이번 Step까지 같은 항공편 검색을 세 가지 방식으로 만들었습니다. 핵심 비교 축은 "다음 단계를 누가 결정하는가(코드 vs LLM)"와 "하위 작업이 미리 정해져 있는가"입니다.
 
 ### 비교표
 
@@ -620,7 +663,7 @@ assertThat(userMessage.getValue())
 | 적합한 상황 | 처리 순서가 늘 같은 업무 | 다음 행동이 앞 결과에 따라 달라지는 탐색형 작업 | 독립적인 하위 작업으로 쪼갤 수 있고, 그 개수가 입력마다 다른 작업 | **다른 프로세스·조직의 에이전트와 통신할 때** — 이 프로젝트 범위 밖 |
 | 이 프로젝트 | `FlightSearchCoordinator` | `ToolCallingSearchService` | `FlightSearchOrchestrator` | 구현 없음 |
 
-### 어떤 패턴을 고를까
+### 선택 순서
 
 Anthropic은 "가장 단순한 해법에서 시작하고, 복잡도가 결과를 확실히 개선할 때만 늘리라"고 권합니다. 이 교재의 결론도 같습니다.
 
@@ -644,6 +687,10 @@ Anthropic은 "가장 단순한 해법에서 시작하고, 복잡도가 결과를
 | "제주 가는 비행기 중 아시아나만 보여 주고, 없으면 대한항공으로" | Tool Calling 에이전트. 앞 결과에 따라 다음 검색이 달라짐 |
 | "금요일이나 토요일에 김포나 광주에서 제주, 제일 싼 거" | Orchestrator-Workers. 독립 작업 4개 + 비교 |
 
+### 확인하기
+
+화면(`/`)에서 위 세 문장을 차례로 입력하고 세 패턴을 모두 실행해 보세요. 패널 위 통계(LLM 횟수, Tool 횟수, Worker 수, 코드 단계 수)와 전체 시간을 표로 적어 비교하면 위 비교표의 "LLM 호출 수", "지연" 행을 직접 확인할 수 있습니다.
+
 ---
 
 ## 일반적인 문제 해결
@@ -661,41 +708,61 @@ Anthropic은 "가장 단순한 해법에서 시작하고, 복잡도가 결과를
 
 ## 실습 과제
 
-1. **(기본)** `MAX_TASKS`를 넘는 계획을 받았을 때 사용자에게 알리도록 하라. `SearchResponse`에 `List<String> warnings` 필드를 추가하고, `FlightSearchPlanner.validate()`가 버린 작업 수와 이유("알 수 없는 공항", "최대 4개 초과" 등)를 경고로 남기도록 바꿔라. `FlightSearchPlannerTest`에 경고 내용을 검증하는 테스트를 추가하라.
-2. **(기본)** Worker 실패와 "항공편 없음"을 구분하라. 지금은 둘 다 빈 `TaskResult`입니다. `TaskResult`에 실패 사유를 담을 필드를 추가하고, `ResultSynthesizer`에 넘기는 요약 한 줄이 `"김포 → 제주 · 2026-10-16: 검색 실패(API 타임아웃)"`처럼 바뀌도록 하라. `FlightSearchOrchestratorTest.workerFailureIsolated`를 함께 고쳐라.
-3. **(도전)** 계획 단계와 종합 단계의 LLM 호출을 하나로 줄일 수 있는 요청은 줄여라. `SearchPlan`의 작업이 1개뿐이면 `ResultSynthesizer`를 부르지 않고 `TaskResult.summaryLine()`을 그대로 답으로 쓰도록 `FlightSearchOrchestrator`를 바꾸고, 실행 기록의 LLM 단계 수가 1이 되는지 `FlightSearchOrchestratorTest`에 테스트를 추가하라. 이 최적화가 "결과가 무슨 뜻인지는 LLM이 판단한다"는 패턴의 원칙과 어떻게 충돌하는지도 정리하라.
-4. **(도전)** Worker마다 제한 시간을 두어라. `CompletableFuture.orTimeout(...)` 또는 `completeOnTimeout(...)`으로 5초 안에 끝나지 않은 작업은 빈 결과로 처리하고, 이를 검증하는 테스트(가짜 Coordinator가 10초 동안 `sleep`)를 추가하라.
+### 과제 1 (기본): 버린 작업을 사용자에게 알리기
+
+지금은 `validate()`가 작업을 버려도 로그에 경고만 남습니다. `SearchPlan`에 `List<String> warnings`를 추가(LLM이 채우지 않도록 `validate()`가 새 `SearchPlan`을 만들 때 채움)하고, 버린 작업과 이유("알 수 없는 공항", "출발=도착", "중복", "최대 4개 초과")를 담아 보세요. `FlightSearchOrchestrator`는 경고가 있으면 답변 끝에 덧붙입니다.
+
+- 힌트: `FlightSearchPlanner.validate()`의 필터 체인을 반복문으로 풀면 이유별로 기록하기 쉽습니다. `FlightSearchPlannerTest.dropsInvalidTasks`의 입력을 그대로 쓰면 됩니다.
+- 완료 기준: `FlightSearchPlannerTest`에 "서울 → 제주"를 넣으면 경고에 "알 수 없는 공항"이 들어 있는지 검증하는 테스트가 추가되고, `./mvnw test`가 모두 통과합니다.
+
+### 과제 2 (기본): Worker 실패와 "항공편 없음" 구분하기
+
+지금은 Worker 실패도 빈 `TaskResult`라서 요약이 `"...: 항공편 없음"`이 됩니다. 실패한 작업의 요약 한 줄이 `"김포 → 제주 · 2026-10-16: 검색 실패(공공데이터 포털 API를 호출하지 못했습니다...)"`처럼 나오게 바꿔 보세요.
+
+- 힌트: `TaskResult`에 실패 사유 필드(예: `String error`)를 추가하고 `summaryLine()`에서 분기합니다. 실패 결과는 `FlightSearchWorker.execute()`의 `catch` 블록에서 만듭니다. 레코드 생성자가 바뀌므로 `TaskResult`를 직접 만드는 곳(`TaskResult.of`, `withLabel`)도 함께 고칩니다.
+- 완료 기준: `FlightSearchOrchestratorTest.workerFailureIsolated`에서 실패한 작업의 `summaryLine()`이 "검색 실패"를 포함하는지 검증하고, 기존 테스트가 모두 통과합니다.
+
+### 과제 3 (도전): 작업이 하나면 종합 LLM 호출 생략하기
+
+계획 결과 작업이 1개뿐이면 비교할 대상이 없습니다. 이때는 `ResultSynthesizer`를 부르지 않고 `TaskResult.summaryLine()`을 그대로 답으로 쓰도록 `FlightSearchOrchestrator.orchestrate()`를 바꿔 보세요.
+
+- 힌트: `runWorkers()` 다음, 종합 단계의 `trace.run(...)` 앞에서 `results.size()`로 분기합니다.
+- 완료 기준: `FlightSearchOrchestratorTest`에 작업 1개짜리 계획을 넣었을 때 실행 기록의 LLM 단계가 1개이고 `verify(synthesizer, never()).synthesize(...)`가 통과하는 테스트가 추가됩니다. 이 최적화가 "결과가 무슨 뜻인지는 LLM이 판단한다"는 패턴의 원칙과 어떻게 충돌하는지 두세 문장으로 정리합니다.
+
+### 과제 4 (도전): Worker 제한 시간 두기
+
+공공데이터 포털 응답이 느리면 Worker 하나 때문에 전체 응답이 늦어집니다. 5초 안에 끝나지 않은 작업은 빈 결과로 처리해 보세요.
+
+- 힌트: `runWorkers()`의 `CompletableFuture.supplyAsync(...)` 뒤에 `completeOnTimeout(TaskResult.of(task, Map.of()), 5, TimeUnit.SECONDS)`를 붙입니다. 테스트에서는 제한 시간을 짧게 바꿀 수 있도록 상수나 생성자 파라미터로 빼 두면 편합니다.
+- 완료 기준: 가짜 Coordinator 하나가 제한 시간보다 오래 `sleep`하도록 만든 테스트에서, 응답이 제한 시간 근처에 돌아오고 해당 작업의 `totalCount`가 0입니다.
+
+> **주의**: `completeOnTimeout`은 결과만 먼저 채울 뿐, 이미 실행 중인 Worker를 멈추지 않습니다. 또 `try (ExecutorService ...)` 블록은 닫힐 때 남은 작업을 기다리므로, 제한 시간의 효과를 보려면 실행기를 닫는 방식도 함께 고민해야 합니다.
 
 ---
 
 ## 요약
 
-1. **Orchestrator-Workers**는 LLM이 요청을 하위 작업으로 **동적으로** 나누고, Worker가 처리하고, LLM이 종합하는 패턴입니다. 하위 작업이 미리 정해져 있지 않다는 점이 Coordinator와의 핵심 차이입니다.
-2. `FlightSearchPlanner`는 `.entity(SearchPlan.class)`로 계획을 받고, `validate()`로 **알 수 없는 공항·출발=도착·중복·개수 초과를 걸러 냅니다**. LLM 출력은 사용자 입력처럼 검증합니다.
-3. `FlightSearchWorker`는 Step 9의 `FlightSearchCoordinator.search()`를 재사용합니다. **상위 결정은 LLM, 하위 실행은 코드**로 패턴을 조합하고, 작업 하나의 실패는 빈 결과로 격리합니다.
-4. `FlightSearchOrchestrator`는 **가상 스레드**와 `CompletableFuture`로 Worker를 병렬 실행합니다. `ExecutionTrace`는 동기화되어 있고, 스레드 이름 `virtual-N`으로 병렬 실행을 눈으로 확인할 수 있습니다.
-5. `ResultSynthesizer`는 **요약 한 줄씩만** LLM에 넘겨 프롬프트를 작게 유지하고, 실패하면 코드로 만든 요약을 돌려줍니다.
-6. 패턴을 고를 때는 **먼저 Coordinator로 충분한지 보고**, 필요할 때만 LLM에게 결정을 넘깁니다.
+1. Orchestrator-Workers는 LLM이 요청을 하위 작업으로 동적으로 나누고, Worker가 처리하고, LLM이 종합하는 패턴입니다. 하위 작업이 미리 정해져 있지 않다는 점이 Coordinator와의 핵심 차이입니다.
+2. `FlightSearchPlanner`는 `.entity(SearchPlan.class)`로 계획을 받고, `validate()`로 알 수 없는 공항·출발=도착·중복·개수 초과를 걸러 냅니다. LLM 출력은 사용자 입력처럼 검증합니다.
+3. `FlightSearchWorker`는 Step 9의 `FlightSearchCoordinator.search()`를 재사용합니다. 상위 결정은 LLM, 하위 실행은 코드로 패턴을 조합하고, 작업 하나의 실패는 빈 결과로 격리합니다.
+4. `FlightSearchOrchestrator`는 가상 스레드와 `CompletableFuture`로 Worker를 병렬 실행하고, `ResultSynthesizer`는 요약 한 줄씩만 LLM에 넘깁니다.
+5. 패턴을 고를 때는 먼저 Coordinator로 충분한지 보고, 필요할 때만 LLM에게 결정을 넘깁니다.
 
 ---
 
 ## 체크리스트
 
-- [ ] Coordinator와 Orchestrator-Workers의 차이를 "하위 작업이 미리 정해져 있는가"로 설명할 수 있다
-- [ ] "금요일이나 토요일에 김포나 광주에서 제주"를 Coordinator가 처리하지 못하는 이유를 안다
-- [ ] `FlightSearchPlanner.validate()`의 다섯 가지 검증을 말할 수 있다
-- [ ] Worker가 Coordinator의 `search()`를 재사용하는 이유를 설명할 수 있다
-- [ ] `runWorkers()`에서 모든 작업을 먼저 제출한 뒤 기다려야 하는 이유를 안다
-- [ ] 화면 실행 기록에서 WORKER 막대 4개가 겹치고 스레드 이름이 서로 다른 것을 확인했다
-- [ ] `ResultSynthesizer`가 전체 항공편 목록 대신 요약만 넘기는 이유를 안다
-- [ ] `FlightSearchOrchestratorTest`, `FlightSearchPlannerTest`, `ResultSynthesizerTest`가 통과한다
-- [ ] 세 패턴과 A2A 프로토콜의 차이를 표로 정리할 수 있다
+- [ ] (목표 1) "금요일이나 토요일에 김포나 광주에서 제주"를 Coordinator가 처리하지 못하는 이유를 "하위 작업이 미리 정해져 있는가"로 설명할 수 있다.
+- [ ] (목표 2) `FlightSearchPlanner.validate()`의 다섯 가지 검증을 말할 수 있고, `FlightSearchPlannerTest`가 통과한다.
+- [ ] (목표 3) Worker가 Coordinator의 `search()`를 재사용하는 이유와, Worker 하나가 실패해도 전체 응답이 성공하는 이유를 설명할 수 있다.
+- [ ] (목표 4) `runWorkers()`에서 모든 작업을 먼저 제출한 뒤 기다려야 하는 이유를 알고, 화면 실행 기록에서 WORKER 막대 4개가 겹치고 스레드 이름이 서로 다른 것을 확인했다(`FlightSearchOrchestratorTest.workersRunInParallel` 통과).
+- [ ] (목표 5) 세 패턴과 A2A 프로토콜의 차이를 비교표로 정리하고, 예시 문장마다 알맞은 패턴을 고를 수 있다.
 
 ---
 
 ## 다음 단계
 
-Step 11은 이 교재의 마지막 단계입니다. Step 1의 ChatClient 설정부터 Tool, 전문 에이전트, 그리고 세 가지 검색 패턴까지의 전체 흐름은 [교재 목차(README)](README.md)에서 다시 확인할 수 있습니다.
+Step 11은 이 교재의 마지막 Step입니다. Step 1의 ChatClient 설정부터 Tool, 전문 에이전트, 세 가지 검색 패턴까지의 전체 흐름은 [교재 안내(README)](README.md)에서 다시 확인할 수 있습니다. 더 나아가고 싶다면 아래 심화 학습에서 Worker를 별도 서비스로 분리하는 A2A 프로토콜과 Evaluator-Optimizer 패턴을 살펴보세요.
 
 ---
 

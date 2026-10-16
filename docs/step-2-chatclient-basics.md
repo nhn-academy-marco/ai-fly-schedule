@@ -1,210 +1,105 @@
 # Step 2: ChatClient 기초와 LLM 연동
 
+Step 1에서 설정한 Ollama·Gemini 연결은 Spring 컨테이너에 `ChatModel` 빈으로 들어 있습니다. 이번에는 그 `ChatModel`을 `ChatClient`로 감싸, 서비스 코드에서 실제로 LLM을 호출해 봅니다.
+
+**이 Step에서 만들 것**: 모델별 `ChatClient` 빈과, 요청의 `model` 값으로 `ChatClient`를 고르는 `ChatClientProvider`를 이해하고, `POST /api/search/coordinator`로 LLM이 문장에서 검색 조건을 뽑아내는 것을 확인합니다. 영어 문장을 보내면 응답의 실행 기록 첫 단계가 다음처럼 `LLM`으로 나옵니다.
+
+```json
+{ "order": 1, "kind": "LLM", "actor": "SearchCriteriaExtractor", "title": "LLM으로 검색 조건 추출", "detail": "광주 → 제주 · 2026-10-17", ... }
+```
+
 ## 학습 목표
 
-이 단계를 마치면 다음을 할 수 있습니다:
+이 Step을 마치면 다음을 할 수 있습니다.
 
-- Spring AI의 `ChatClient`를 사용하여 LLM과 간단한 질문-답변을 구현할 수 있습니다
-- `@Configuration` 클래스에서 모델별 `ChatClient`를 Bean으로 등록할 수 있습니다
-- `@Qualifier`와 `ChatClientProvider`를 활용하여 요청마다 Ollama와 Gemini를 선택할 수 있습니다
-- `.content()`와 `.entity(Class)`로 LLM 응답을 문자열 또는 자바 객체로 받을 수 있습니다
-- Controller에서 사용자의 질문을 받아 LLM의 답변을 반환하는 전체 흐름을 이해할 수 있습니다
-
----
-
-> **핵심 개념**: ChatClient는 Spring AI에서 LLM과 대화하기 위한 통일된 API입니다. 쉽게 말해, `RestTemplate`이나 `WebClient`로 외부 API를 호출하듯, ChatClient로 AI 모델을 호출한다고 생각하면 됩니다. Ollama든 Gemini든 ChatClient 하나로 동일한 코드로 대화할 수 있다는 것이 핵심입니다.
+1. `ChatClient`와 `ChatModel`의 역할 차이를 설명할 수 있다.
+2. `@Configuration` 클래스에서 모델별 `ChatClient` 빈을 등록하고, `@Qualifier`로 원하는 빈을 주입할 수 있다.
+3. `ChatClientProvider`가 요청의 `model` 값으로 `ChatClient`를 고르고, 키 누락·연결 실패를 안내 문장으로 바꾸는 흐름을 설명할 수 있다.
+4. `prompt().system().user().call()`로 LLM을 호출하고, `.content()`와 `.entity(Class)`로 결과를 문자열이나 자바 객체로 받을 수 있다.
+5. curl로 `/api/search/coordinator`를 호출하고, 응답의 `trace`로 정규식 경로와 LLM 경로를 구분할 수 있다.
 
 ---
 
 ## 전체 흐름
 
-이번 단계에서 구현할 전체 흐름은 다음과 같습니다:
-
 ```text
-[사용자] → POST /api/search/coordinator  {"message": "...", "model": "ollama"}
-    ↓
-[@RestController  SearchController.coordinator()]
-    ↓
-[@Service  FlightSearchCoordinator.coordinate(message, model)]
-    ↓
-[@Service  SearchCriteriaExtractor.extract(message, () -> chatClientProvider.get(model))]
-    ↓  정규식으로 안 되면 model 값에 따라 ollamaChatClient 또는 geminiChatClient 선택
+[사용자]  POST /api/search/coordinator  {"message": "...", "model": "ollama"}
+  ↓
+[SearchController.coordinator()]
+  ↓
+[FlightSearchCoordinator.coordinate(message, model)]
+  ↓
+[SearchCriteriaExtractor.extract(message, () -> chatClientProvider.get(model))]
+  ↓  정규식으로 안 되면 model 값에 따라 ollamaChatClient 또는 geminiChatClient
 [ChatClient.prompt().system(...).user(message).call().entity(SearchCriteria.class)]
-    ↓
-[ChatModel (OllamaChatModel 또는 GoogleGenAiChatModel)]
-    ↓
-[AI 모델이 응답 생성]
-    ↓
-[SearchResponse(JSON)로 사용자에게 응답 전달]
+  ↓
+[ChatModel]  OllamaChatModel 또는 GoogleGenAiChatModel
+  ↓
+[SearchResponse(JSON)]
 ```
 
-> 이 단계에서는 흐름 가운데 **ChatClient를 만들고 고르고 호출하는 부분**만 다룹니다. `FlightSearchCoordinator`가 검색 조건을 받은 뒤 무엇을 하는지는 Step 9에서 배웁니다.
+이번 Step은 이 흐름 가운데 `ChatClient`를 만들고, 고르고, 호출하는 부분만 다룹니다. `FlightSearchCoordinator`가 검색 조건을 받은 뒤 하는 일은 Step 9에서 배웁니다.
 
-기존 Spring Boot의 Controller → Service → Repository 구조와 비교하면, Repository 대신 ChatClient가 들어간 형태입니다:
+익숙한 Spring 구조와 비교하면 Repository 자리에 `ChatClient`가 들어간 모양입니다.
 
 ```text
-기존: [Controller] → [Service] → [Repository] → [Database]
-AI:   [Controller] → [Service] → [ChatClient] → [AI 모델(LLM)]
+기존:  [컨트롤러] → [서비스] → [Repository] → [데이터베이스]
+AI:    [컨트롤러] → [서비스] → [ChatClient] → [LLM]
 ```
 
 ---
 
 ## ChatClient란?
 
-**ChatClient**는 Spring AI에서 LLM과 대화하기 위한 **유창한 API**(Fluent API)를 제공하는 인터페이스입니다.
+**ChatClient**는 Spring AI에서 LLM에 프롬프트를 보내고 응답을 받는 API입니다. `RestClient`로 외부 HTTP API를 부르듯, `ChatClient`로 LLM을 부릅니다.
 
-### ChatClient의 필요성
+### 왜 필요한가
 
-**LLM SDK의 문제점:**
-
-각 LLM 제공자(Ollama, Gemini, OpenAI 등)는 자신만의 SDK를 제공합니다:
+LLM 제공자마다 SDK와 요청 형식이 다릅니다. 제공자의 SDK를 직접 쓰면 모델을 바꿀 때 호출 코드를 모두 고쳐야 합니다. `ChatClient`는 어떤 모델이든 같은 코드로 호출하게 해 줍니다.
 
 ```java
-// 개념 설명용 의사 코드 (실제 SDK API와 다름)
-// Ollama SDK
-OllamaApi ollama = new OllamaApi("http://localhost:11434");
-OllamaResult result = ollama.generate("모델명", "프롬프트");
-
-// Gemini SDK
-GenerativeModel model = new GenerativeModel("gemini-pro", apiKey);
-GenerateContentResponse response = model.generateContent("프롬프트");
-
-// OpenAI SDK
-OpenAiService service = new OpenAiService(apiKey);
-ChatCompletion result = service.createChatCompletion(...);
+String answer = chatClient.prompt()
+        .system("당신은 국내선 항공편 검색 도우미입니다.")   // 역할과 규칙
+        .user("내일 광주에서 제주 가는 항공편")              // 사용자 질문
+        .call()                                              // LLM 호출 (동기)
+        .content();                                          // 응답 텍스트
 ```
 
-**문제점:**
-- 각 SDK마다 사용법이 다름
-- 모델 교체 시 코드 대폭 수정
-- 학습 곡선이 높음
-- 코드 중복 발생
+메서드를 이어 붙여 요청을 조립하는 이런 방식을 **유창한 API**(Fluent API)라고 합니다.
 
-**ChatClient의 해결책:**
+| 메서드 | 반환 타입 | 하는 일 |
+|--------|-----------|---------|
+| `prompt()` | `ChatClient.ChatClientRequestSpec` | 요청 조립 시작 |
+| `system(String)` | `ChatClientRequestSpec` | 시스템 프롬프트(System Prompt, LLM의 역할과 규칙을 정하는 지시) 설정 |
+| `user(String)` | `ChatClientRequestSpec` | 사용자 메시지 설정 |
+| `call()` | `ChatClient.CallResponseSpec` | LLM을 동기 호출 |
+| `content()` | `String` | 응답 텍스트 |
+| `entity(Class)` | 지정한 타입 | 응답 JSON을 자바 객체로 변환 |
+| `chatResponse()` | `ChatResponse` | 토큰 사용량 같은 메타데이터를 포함한 전체 응답 |
 
-```java
-// 통일된 API
-String response = chatClient.prompt()
-    .user("프롬프트")
-    .call()
-    .content();
+### ChatClient와 ChatModel
 
-// 모델 교체도 설정만 변경
-// 코드는 그대로!
-```
+| 구분 | ChatModel | ChatClient |
+|------|-----------|------------|
+| 역할 | 특정 제공자와 실제로 통신 | 프롬프트 조립, 호출, 결과 변환 |
+| 만드는 쪽 | 스타터의 자동 설정 | 개발자 (`ChatClient.builder(chatModel)`) |
+| 이 프로젝트의 빈 | `ollamaChatModel`, `googleGenAiChatModel` | `ollamaChatClient`, `geminiChatClient` |
 
-### ChatClient의 설계 원칙
-
-**1. 유창한 API (Fluent API)**
-
-메서드 체이닝으로 직관적인 코드 작성:
-
-```java
-chatClient
-    .prompt()                              // 1. 프롬프트 시작
-    .system("너는 항공 도우미야")           // 2. 시스템 프롬프트
-    .user("내일 광주에서 제주로")          // 3. 사용자 메시지
-    .advisors(specs)                        // 4. Advisor 적용
-    .call()                                 // 5. 호출
-    .content();                             // 6. 응답 반환
-```
-
-**2. 빌더 패턴 (Builder Pattern)**
-
-```java
-ChatClient client = ChatClient.builder(chatModel)
-    .defaultOptions(options)        // 기본 옵션
-    .defaultAdvisors(advisors)      // 기본 Advisor
-    .defaultTools(tools)            // 기본 Tool (Step 3, 이 프로젝트는 사용하지 않음)
-    .build();
-```
-
-**3. 요청 단위의 독립성**
-
-`prompt()`는 호출할 때마다 기본 설정을 복사한 새 요청 스펙을 만들므로, 한 요청에서 지정한 `system()`, `user()`, `advisors()`는 다른 요청에 영향을 주지 않습니다. 다만 `ChatClient.Builder`는 변경 가능한(mutable) 객체이므로, 기존 설정을 바탕으로 다른 ChatClient를 만들 때는 `mutate()`로 복사본을 만들어 사용합니다:
-
-```java
-ChatClient client1 = builder.build();
-ChatClient client2 = client1.mutate()       // client1 설정을 복사한 새 Builder
-        .defaultSystem("다른 역할")
-        .build();
-
-// client2의 설정 변경은 client1에 영향 없음
-// 주의: 같은 builder에 defaultSystem()을 호출한 뒤 다시 build()하면
-//       이미 만든 client1도 같은 기본 설정을 공유하므로 영향을 받습니다
-```
-
-### ChatClient의 특징
-
-| 특징 | 설명 |
-|------|------|
-| **빌더 패턴** | 메서드 체이닝으로 직관적인 코드 작성 |
-| **다중 LLM 지원** | Ollama, Gemini, OpenAI 등 다양한 모델 사용 |
-| **Function Calling** | LLM이 자바 메서드를 호출할 수 있게 함 |
-| **구조화된 출력** | `entity(Class)`로 응답을 자바 객체로 변환 |
-
-### ChatClient vs ChatModel
-
-```text
-┌─────────────────────────────────────────┐
-│         ChatClient                      │
-│  (LLM과 대화하는 API)                   │
-│                                         │
-│  .prompt()                              │
-│    .user("질문")                        │
-│    .call()                              │
-│    .content()                           │
-└─────────────────────────────────────────┘
-           ↓ 사용
-┌─────────────────────────────────────────┐
-│         ChatModel                       │
-│  (실제 LLM 제공자와 연결)               │
-│                                         │
-│  ┌────────────┐    ┌────────────┐       │
-│  │  Ollama    │    │  Gemini    │       │
-│  │ChatModel   │    │ChatModel   │       │
-│  └────────────┘    └────────────┘       │
-└─────────────────────────────────────────┘
-```
-
-**요약:**
-- **ChatClient**: LLM과 대화하는 방법을 정의하는 API
-- **ChatModel**: 실제 LLM(Ollama, Gemini 등)과 연결되는 구현체
+`prompt()`는 호출할 때마다 새 요청 스펙을 만들므로, 한 요청에 넣은 `system()`, `user()`는 다른 요청에 영향을 주지 않습니다. 한 번 만든 `ChatClient`는 여러 스레드에서 함께 써도 되므로 싱글톤 빈으로 둡니다.
 
 ---
 
-## Step 2-1: ChatClientConfig 설정
+## Step 2-1: ChatClientConfig로 ChatClient 빈 등록
 
-### 왜 이렇게 할까요?
+### 왜 필요한가
 
-Step 1에서 `application.yml`에 Ollama와 Gemini 설정을 추가했습니다. Spring AI는 이 설정을 읽어서 자동으로 `OllamaChatModel`과 `GoogleGenAiChatModel`이라는 Bean을 생성합니다. 하지만 우리가 Service에서 직접 사용할 `ChatClient`는 아직 존재하지 않습니다. 따라서 `@Configuration` 클래스에서 모델마다 `ChatClient`를 하나씩 만들어 Bean으로 등록합니다.
+Spring AI는 `ChatModel` 빈은 자동으로 만들어 주지만, 서비스가 쓸 `ChatClient` 빈은 만들어 주지 않습니다. 이 프로젝트는 `ChatModel`이 두 개이므로 `ChatClient`도 모델마다 하나씩 직접 만듭니다. 외부 라이브러리 객체는 클래스에 `@Component`를 붙일 수 없으므로, `@Configuration` 클래스의 `@Bean` 메서드로 등록합니다.
 
-기존 Spring Boot에서 데이터베이스 설정을 `DataSourceConfig` 클래스에서 했던 것과 동일한 패턴입니다. Spring AI에서는 AI 모델 설정을 `ChatClientConfig` 클래스에서 합니다.
+### 어떻게 하는가
 
-> **Spring Boot 복습**: `@Configuration` 클래스는 Spring 컨테이너에 Bean을 수동으로 등록할 때 사용합니다. 외부 라이브러리의 객체는 `@Component`를 붙일 수 없으므로, `@Bean` 메서드로 직접 생성하여 등록합니다. `ChatClient`도 Spring AI 라이브러리의 객체이므로 `@Bean`으로 등록합니다.
-
-### ChatClientConfig.java
-
-실제 프로젝트의 `src/main/java/net/java21/flyschedule/config/ChatClientConfig.java` 전체입니다.
+파일: `src/main/java/net/java21/flyschedule/config/ChatClientConfig.java`
 
 ```java
-package net.java21.flyschedule.config;
-
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-/**
- * ChatClient 설정 (Spring Boot 3.5.11 + Spring AI 1.1.4)
- *
- * <p>Ollama와 Gemini ChatClient를 하나씩 만듭니다.
- * Tool은 여기서 기본값(defaultTools)으로 등록하지 않습니다.
- * Tool이 필요한 곳(ToolCallingSearchService)에서만 요청마다 {@code .tools(...)}로 넘겨,
- * 파라미터 추출·계획·요약처럼 Tool이 필요 없는 LLM 호출이 엉뚱한 Tool을 부르지 않게 합니다.
- */
 @Configuration
 public class ChatClientConfig {
 
@@ -224,79 +119,38 @@ public class ChatClientConfig {
 }
 ```
 
-### 코드 상세 설명
+**코드 읽기**
 
-**1. @Bean 메서드 이름이 곧 Bean 이름**
+1. `@Bean` 메서드 이름이 빈 이름이 됩니다. 같은 `ChatClient` 타입 빈이 `ollamaChatClient`, `geminiChatClient` 두 개 생깁니다.
+2. `@Qualifier("ollamaChatModel")`: `ChatModel` 타입 빈이 두 개이므로 이름으로 골라 주입합니다.
+3. `ChatClient.builder(chatModel)`로 빌더를 만들고, 모든 요청에 붙일 기본값을 지정한 뒤 `build()`합니다.
+4. `defaultAdvisors(new SimpleLoggerAdvisor())`: 모든 요청과 응답을 DEBUG 로그로 남기는 Advisor를 기본 등록합니다(Step 4).
+5. `defaultTools(...)`는 쓰지 않습니다. 기본으로 Tool을 등록하면 검색 조건 추출(`SearchCriteriaExtractor`), 작업 계획(`FlightSearchPlanner`), 결과 요약(`ResultSynthesizer`)처럼 Tool이 필요 없는 호출에도 Tool 목록이 붙어, LLM이 엉뚱하게 Tool을 부를 수 있습니다. Tool은 필요한 곳(`ToolCallingSearchService`)에서만 요청마다 `.tools(...)`로 넘깁니다(Step 3).
 
-```java
-@Bean
-public ChatClient ollamaChatClient(...) { ... }   // Bean 이름: "ollamaChatClient"
-```
+| 빈 이름 | 타입 | 만드는 쪽 |
+|---------|------|-----------|
+| `ollamaChatModel` | `OllamaChatModel` | Ollama 스타터 자동 설정 |
+| `googleGenAiChatModel` | `GoogleGenAiChatModel` | Google GenAI 스타터 자동 설정 |
+| `ollamaChatClient` | `ChatClient` | `ChatClientConfig` |
+| `geminiChatClient` | `ChatClient` | `ChatClientConfig` |
 
-- `@Service`, `@Component`와 동일하게 Spring Bean을 등록합니다
-- 차이점: 개발자가 직접 객체를 생성합니다 (외부 라이브러리 객체)
-- 같은 `ChatClient` 타입 Bean이 2개이므로, 주입받는 쪽에서 `@Qualifier("ollamaChatClient")`처럼 이름으로 구분합니다
+> **생각해 보기**: `ChatClient.Builder`를 빈으로 두고 서비스마다 `build()`하는 방법도 있습니다. 이 프로젝트가 완성된 `ChatClient`를 빈으로 둔 까닭은 무엇일까요? 심화 학습에서 두 방식을 비교합니다.
 
-**2. @Qualifier**
+### 확인하기
 
-```java
-@Qualifier("ollamaChatModel")  // 이름으로 특정 Bean 선택
-ChatModel ollamaChatModel
-```
-
-- 같은 타입의 Bean이 여러 개일 때 사용합니다
-- `ChatModel` 타입의 Bean이 2개(Ollama, Gemini)이므로 이름으로 구분해 원하는 Bean을 주입합니다
-
-**3. ChatClient.builder(...).build()**
-
-- `ChatClient.builder(chatModel)`로 빌더를 만들고, 모든 요청에 공통으로 적용할 기본값을 지정한 뒤 `build()`로 ChatClient를 완성합니다
-- `defaultAdvisors(new SimpleLoggerAdvisor())`: 모든 요청과 응답을 DEBUG 로그로 남깁니다 (Step 4에서 자세히 다룹니다)
-- `ChatClient`는 한 번 만들면 여러 스레드에서 함께 써도 안전하므로, 싱글톤 Bean으로 등록해 재사용합니다
-
-**4. 왜 `ChatClient.Builder`가 아니라 `ChatClient`를 Bean으로 등록할까요?**
-
-`ChatClient.Builder`를 Bean으로 등록하고 쓰는 쪽에서 `build()`하는 방법도 있습니다. 하지만 이 프로젝트는 모델마다 설정이 하나뿐이고, 여러 서비스가 같은 설정을 공유합니다. 완성된 `ChatClient`를 Bean으로 두면 서비스마다 `build()`를 반복하지 않아도 되고, "어떤 기본값이 붙어 있는가"를 `ChatClientConfig` 한 곳에서 확인할 수 있습니다.
-
-**5. 왜 `defaultTools`를 등록하지 않을까요?**
-
-`ChatClient.builder()`에는 `defaultTools(...)`로 Tool을 기본 등록하는 기능도 있습니다(Step 3). 그러나 기본으로 등록하면 이 ChatClient를 쓰는 **모든** LLM 호출이 Tool 목록을 받게 됩니다. 이 프로젝트에는 검색 조건 추출(`SearchCriteriaExtractor`), 작업 계획(`FlightSearchPlanner`), 결과 요약(`ResultSynthesizer`)처럼 Tool이 필요 없는 호출이 많습니다. 이런 호출에 Tool 목록이 붙어 있으면 LLM이 엉뚱하게 Tool을 부를 수 있으므로, Tool은 필요한 곳(`ToolCallingSearchService`)에서만 요청마다 `.tools(...)`로 넘깁니다.
-
-### 코드 설명
-
-| 요소 | 설명 |
-|------|------|
-| `@Configuration` | Spring 설정 클래스임을 명시 |
-| `@Bean` | Spring 컨테이너가 관리하는 빈 등록 (메서드 이름이 빈 이름) |
-| `@Qualifier("ollamaChatModel")` | 특정 빈 이름으로 주입 |
-| `ChatClient.builder()` | ChatClient를 생성하는 빌더 |
-| `defaultAdvisors(...)` | 모든 요청에 적용할 Advisor 등록 |
-
-### Spring AI가 자동으로 생성하는 빈
-
-`application.yml` 설정에 따라 Spring AI가 자동으로 다음 빈들을 생성합니다:
-
-| 빈 이름 | 타입 | 설명 |
-|---------|------|------|
-| `ollamaChatModel` | `OllamaChatModel` | Ollama LLM 연결 |
-| `googleGenAiChatModel` | `GoogleGenAiChatModel` | Gemini LLM 연결 |
-
-여기에 `ChatClientConfig`가 `ollamaChatClient`, `geminiChatClient` 두 개의 `ChatClient` 빈을 더합니다.
+애플리케이션이 오류 없이 시작되면 네 빈이 모두 만들어지고 주입된 것입니다. 일부러 `ChatClientProvider` 생성자의 `@Qualifier("ollamaChatClient")`를 지우고 실행해 보면, `ChatClient` 빈이 두 개라서 어느 것을 넣을지 모른다는 오류(`expected single matching bean but found 2`)를 볼 수 있습니다. 확인한 뒤 되돌리세요.
 
 ---
 
-## Step 2-2: 모델 선택과 첫 번째 LLM 호출
+## Step 2-2: ChatClientProvider로 모델 고르기
 
-### 왜 이렇게 할까요?
+### 왜 필요한가
 
-지금까지 데이터베이스에서 데이터를 조회할 때 `UserService`가 `UserRepository`를 주입받아 사용했던 것을 떠올려 보세요. AI 모델과 대화할 때도 동일한 패턴을 사용합니다. 다만 이 프로젝트는 요청마다 사용자가 Ollama와 Gemini 중 하나를 고를 수 있으므로, 모델 이름을 받아 알맞은 `ChatClient`를 돌려주는 작은 컴포넌트 `ChatClientProvider`를 둡니다.
+화면과 API에서 사용자는 요청마다 Ollama와 Gemini 중 하나를 고릅니다. 서비스마다 `"gemini".equals(model) ? ... : ...`를 반복하면 키 검사나 오류 문구가 서비스마다 달라지기 쉽습니다. 모델 선택 규칙을 한 클래스에 모으면 세 가지 검색 패턴(Step 9~11)이 모두 같은 방식으로 모델을 고르고 같은 문장으로 오류를 안내합니다.
 
-Controller에서 직접 ChatClient를 호출해도 되지만, Service 계층을 분리하면 비즈니스 로직(예: 질문 전처리, 응답 후처리)을 한 곳에서 관리할 수 있어 유지보수가 쉬워집니다. 이것은 Spring Boot에서 배운 "관심사의 분리(Separation of Concerns)" 원칙과 동일합니다.
+### 어떻게 하는가
 
-> **Spring Boot 복습**: `@Service`와 `@Component`는 Spring이 자동으로 Bean으로 등록하는 클래스에 붙입니다. 생성자 주입(Constructor Injection)을 사용하면 `final` 필드로 불변성을 보장할 수 있습니다. Spring 4.3부터는 생성자가 하나뿐이면 `@Autowired`를 생략할 수 있습니다.
-
-### ChatClientProvider: 모델 이름으로 ChatClient 고르기
-
-`src/main/java/net/java21/flyschedule/config/ChatClientProvider.java` (주석 일부 생략)
+파일: `src/main/java/net/java21/flyschedule/config/ChatClientProvider.java`
 
 ```java
 @Component
@@ -322,7 +176,7 @@ public class ChatClientProvider {
 
     public ChatClient get(String model) {
         if (!GEMINI.equalsIgnoreCase(model)) {
-            return ollamaChatClient;               // "gemini"가 아니면(생략 포함) Ollama
+            return ollamaChatClient;
         }
         if (!geminiConfigured) {
             throw new IllegalArgumentException(
@@ -332,10 +186,7 @@ public class ChatClientProvider {
     }
 
     public static String describeError(Exception e) {
-        // ExternalApiException(공공데이터 포털 오류) → 메시지를 그대로 반환
-        // 그 밖에는 원인(cause)을 따라가며 연결 실패 → "LLM 서버에 연결할 수 없습니다. ..."
-        //                     "API key not valid" → "Gemini API 키가 올바르지 않습니다. ..."
-        // ... 생략
+        // ... 생략 (ExternalApiException은 메시지 그대로, 연결 실패·잘못된 키는 안내 문장으로)
     }
 
     public static String normalize(String model) {
@@ -344,27 +195,42 @@ public class ChatClientProvider {
 }
 ```
 
-| 메서드 | 역할 |
-|--------|------|
-| `get(model)` | `"gemini"`면 Gemini, 그 밖(생략 포함)에는 Ollama `ChatClient`를 돌려줍니다. Gemini 키가 `not-set`이면 안내 문장을 담은 `IllegalArgumentException`을 던집니다 |
-| `describeError(e)` | 예외를 사용자에게 보여 줄 문장으로 바꿉니다. 공공데이터 포털 오류(`ExternalApiException`, Step 6)는 메시지를 그대로, LLM 오류는 연결 실패·잘못된 키를 구분해 안내합니다 |
-| `normalize(model)` | 실행 기록에 남길 모델 이름을 `"ollama"`/`"gemini"`로 맞춥니다 |
+**코드 읽기**
 
-**왜 이렇게 설계했을까요?** 서비스마다 `"gemini".equals(model) ? ... : ...`를 반복하면, 키 검사나 오류 문구가 서비스마다 달라지기 쉽습니다. 모델 선택 규칙을 한 클래스에 모아 두면 세 가지 검색 패턴(Step 9~11)이 모두 같은 방식으로 모델을 고르고, 같은 문장으로 오류를 안내합니다.
+1. `get(model)`: `"gemini"`(대소문자 무관)면 Gemini, 그 밖의 값과 `null`은 Ollama를 돌려줍니다.
+2. 생성자에서 키가 `not-set`인지 미리 판단해 두고, Gemini를 고른 요청에서만 `IllegalArgumentException`을 던집니다. 각 패턴 서비스가 이 예외를 잡아 `success: false` 응답의 `message`로 보여 줍니다.
+3. `describeError(e)`: 예외를 사용자에게 보여 줄 문장으로 바꿉니다. 공공데이터 포털 오류(`ExternalApiException`, Step 6)는 메시지를 그대로 쓰고, 원인을 따라가며 연결 실패면 "LLM 서버에 연결할 수 없습니다...", `API key not valid`면 "Gemini API 키가 올바르지 않습니다..."로 바꿉니다.
+4. `normalize(model)`: 실행 기록에 남길 모델 이름을 `"ollama"`나 `"gemini"`로 맞춥니다.
 
-### 첫 번째 LLM 호출: SearchCriteriaExtractor
+### 확인하기
 
-이 프로젝트에서 가장 단순한 LLM 호출은 `SearchCriteriaExtractor`에 있습니다. 사용자 문장에서 출발 공항, 도착 공항, 날짜 같은 검색 조건을 뽑는 클래스로, 정규식으로 먼저 시도하고 실패할 때만 LLM을 부릅니다.
+```bash
+./mvnw test -Dtest=ChatClientProviderTest
+```
 
-`src/main/java/net/java21/flyschedule/service/ai/SearchCriteriaExtractor.java` (일부)
+`selectsByModelName`, `geminiWithoutKey`, `describeError`, `normalize` 네 테스트가 통과하면 됩니다. `src/test/java/net/java21/flyschedule/config/ChatClientProviderTest.java`를 열어, 가짜 `ChatClient`(Mockito `mock`)로 선택 규칙만 검증하는 방식을 살펴보세요.
+
+---
+
+## Step 2-3: 첫 LLM 호출 — SearchCriteriaExtractor
+
+### 왜 필요한가
+
+"내일 광주에서 제주로 가는 항공편"이라는 문장으로 항공편을 검색하려면 먼저 출발 공항, 도착 공항, 날짜 같은 검색 조건을 뽑아야 합니다. 정해진 형식의 문장은 정규식으로 충분하지만, "flights from Gwangju to Jeju tomorrow"나 "다음 주 금요일"처럼 형식이 다양한 문장은 LLM이 더 잘 처리합니다. `SearchCriteriaExtractor`는 정규식을 먼저 시도하고, 실패할 때만 LLM을 부릅니다.
+
+### 어떻게 하는가
+
+파일: `src/main/java/net/java21/flyschedule/service/ai/SearchCriteriaExtractor.java`
 
 ```java
 public Extraction extract(String message, Supplier<ChatClient> chatClient) {
     Optional<SearchCriteria> parsed = parseWithRegex(message);
     if (parsed.isPresent()) {
-        return new Extraction(parsed.get(), false);    // 정규식으로 충분하면 LLM을 부르지 않음
+        log.info("정규식으로 검색 조건 추출: {}", parsed.get());
+        return new Extraction(parsed.get(), false);
     }
 
+    log.info("정규식으로 공항을 찾지 못해 LLM으로 검색 조건 추출: {}", message);
     SearchCriteria criteria = chatClient.get().prompt()
             .system("""
                     항공편 검색 문장에서 검색 조건을 추출합니다.
@@ -374,121 +240,65 @@ public Extraction extract(String message, Supplier<ChatClient> chatClient) {
                     """.formatted(LocalDate.now()))
             .user(message)
             .call()
-            .entity(SearchCriteria.class);              // JSON 응답 → 자바 record
-    // ... 생략 (공항을 찾지 못하면 IllegalArgumentException)
+            .entity(SearchCriteria.class);
+
+    if (criteria == null || !criteria.hasRoute()) {
+        throw new IllegalArgumentException("출발 공항과 도착 공항을 찾지 못했습니다. 예: \"내일 광주에서 제주\"");
+    }
     return new Extraction(criteria, true);
 }
 ```
 
-- `prompt()` → `system(...)` → `user(...)` → `call()`까지는 모든 LLM 호출이 같습니다
-- 마지막을 `.content()`로 끝내면 문자열을, `.entity(SearchCriteria.class)`로 끝내면 자바 객체를 받습니다 (Structured Output)
-- `ChatClient`를 직접 받지 않고 `Supplier<ChatClient>`로 받는 이유: 정규식으로 끝나는 요청에서는 `chatClientProvider.get(model)`을 부르지 않으므로, Gemini 키가 없어도 Gemini를 선택한 요청이 정규식 경로로는 성공합니다
+**코드 읽기**
 
-`SearchCriteria`는 다음과 같은 record이며, 필드마다 붙인 `@JsonPropertyDescription`이 LLM에게 전달되는 JSON 스키마의 설명이 됩니다.
+1. `parseWithRegex(message)`: 공항 이름이 정확히 두 개이고 계산이 필요한 날짜 표현("다음 주", "요일" 등)이 없을 때만 결과를 돌려줍니다. 이때는 LLM을 부르지 않으므로 빠르고 결과가 항상 같습니다.
+2. 시스템 프롬프트에 오늘 날짜를 넣습니다. LLM은 오늘이 며칠인지 모르기 때문입니다.
+3. `.entity(SearchCriteria.class)`: 응답을 문자열이 아니라 자바 record로 받습니다. 이렇게 LLM에게 정해진 JSON 형식으로 답하게 하고 객체로 변환받는 기능을 **Structured Output**이라고 합니다. Spring AI가 `SearchCriteria`의 JSON 스키마를 프롬프트에 덧붙이고, 응답 JSON을 객체로 바꿉니다.
+4. `Supplier<ChatClient>`로 받는 이유: 정규식으로 끝나는 요청에서는 `chatClientProvider.get(model)`이 아예 불리지 않습니다. 그래서 Gemini 키가 없어도 Gemini를 고른 한국어 요청은 정규식 경로로 성공합니다.
+5. `Extraction(criteria, usedLlm)`: LLM을 썼는지 함께 돌려줘, `FlightSearchCoordinator`가 실행 기록에 `LLM` 또는 `CODE` 단계로 남깁니다.
+
+Structured Output의 대상인 `SearchCriteria`는 필드마다 `@JsonPropertyDescription`을 붙여 둡니다. 이 설명이 LLM에게 전달되는 JSON 스키마의 `description`이 됩니다.
+
+파일: `src/main/java/net/java21/flyschedule/dto/search/SearchCriteria.java`
 
 ```java
 public record SearchCriteria(
         @JsonPropertyDescription("출발 공항 한글 이름 (예: 광주, 김포, 제주)")
         String departure,
+
         @JsonPropertyDescription("도착 공항 한글 이름 (예: 제주, 김포, 김해)")
         String arrival,
+
         @JsonPropertyDescription("출발 날짜, YYYY-MM-DD 형식")
         String date,
+
         // ... 생략 (afterTime, beforeTime, minPrice, maxPrice)
-) { ... }
+) {
+    // ... 생략 (hasRoute(), label())
+}
 ```
 
-### ChatClient API 상세 분석
+> **주의**: `.entity()`는 LLM이 형식에 맞는 JSON을 돌려줄 때만 성공합니다. 작은 모델은 공항 이름을 영어로 적거나 필드를 빠뜨리기도 합니다. 그래서 `hasRoute()`로 결과를 다시 검사하고, 실패하면 이해할 수 있는 예외 메시지를 던집니다. LLM의 출력은 항상 코드로 검증한다고 기억하세요.
 
-**메서드 체이닝 (Method Chaining)**
+### 확인하기
 
-```java
-chatClient.prompt().user("질문").call().content();
+```bash
+./mvnw test -Dtest=SearchCriteriaExtractorTest
 ```
 
-각 메서드가 무엇을 하는지 하나씩 뜯어보겠습니다:
-
-```java
-// 1단계: prompt() - 프롬프트 빌더 시작
-ChatClient.ChatClientRequestSpec requestSpec = chatClient.prompt();
-// → 요청(system, user, advisors 등)을 구성하는 빌더 객체 반환
-
-// 2단계: user() - 사용자 질문 설정
-requestSpec = requestSpec.user("스프링이 뭐야?");
-// → 질문 내용을 설정, 연속 체이닝 가능
-
-// 3단계: call() - LLM 호출
-ChatClient.CallResponseSpec responseSpec = requestSpec.call();
-// → 동기(blocking) 호출 방식의 응답 스펙 반환
-
-// 4단계: content() - 응답 내용 추출
-String answer = responseSpec.content();
-// → 응답에서 텍스트 내용만 추출 (전체 응답은 chatResponse()로 조회)
-
-// 전체: 한 줄로 표현
-String oneLine = chatClient.prompt().user("스프링이 뭐야?").call().content();
-```
-
-**왜 이렇게 설계했을까요?**
-
-```text
-장점 1: 가독성
-chatClient.prompt().user("질문").call().content();
-→ 무슨 일을 하는지 한눈에 이해 가능
-
-장점 2: 유연성
-chatClient.prompt()
-    .system("너는 도우미야")
-    .user("질문")
-    .advisors(specs)
-    .call()
-    .content();
-→ 필요에 따라 중간 단계 추가 가능
-
-장점 3: 원하는 형태로 결과 받기
-String content = chatClient.prompt()...content();
-SearchCriteria criteria = chatClient.prompt()...entity(SearchCriteria.class);
-→ 문자열 또는 자바 객체로 바로 변환 (JSON 변환은 실행 시점에 수행)
-```
-
-### ChatClient API 상세
-
-```text
-ChatClient.prompt()
-    ↓
-.user("질문 내용")           // 사용자 질문 설정
-    ↓
-.call()                     // LLM 호출 및 응답 대기
-    ↓
-.content()                  // 응답 내용 반환 (String)
-```
-
-| 메서드 | 반환 타입 | 설명 |
-|--------|----------|------|
-| `prompt()` | `ChatClient.ChatClientRequestSpec` | 프롬프트 빌더 시작 |
-| `user(String)` | `ChatClient.ChatClientRequestSpec` | 사용자 질문 설정 |
-| `call()` | `ChatClient.CallResponseSpec` | LLM 호출 (동기) |
-| `content()` | `String` | 응답 내용 반환 |
-| `entity(Class)` | 지정한 타입 | 응답 JSON을 자바 객체로 변환 |
-| `chatResponse()` | `ChatResponse` | 메타데이터를 포함한 전체 응답 반환 |
+`regexSkipsLlm`(정규식으로 충분하면 LLM을 호출하지 않는다)과 `usesLlmWhenRegexFails`(정규식이 실패하면 Structured Output을 쓴다)가 이 절의 두 경로를 검증합니다. 실제 LLM 없이 가짜 `ChatClient`로 테스트하므로 Ollama가 꺼져 있어도 통과합니다.
 
 ---
 
-## Step 2-3: 실제 컨트롤러 구현
+## Step 2-4: SearchController
 
-### 왜 이렇게 할까요?
+### 왜 필요한가
 
-Service 계층을 만들었지만, 사용자가 직접 자바 코드를 실행할 수는 없습니다. HTTP 요청을 받아 Service를 호출하고 결과를 반환하는 Controller가 필요합니다. 이것은 여러분이 이미 알고 있는 `@RestController`의 역할과 완전히 동일합니다.
+서비스를 만들었으니 HTTP 요청을 받아 서비스에 넘길 컨트롤러가 필요합니다. 이 프로젝트는 같은 문장을 세 가지 패턴으로 처리해 비교할 수 있도록 엔드포인트 세 개를 둡니다.
 
-테스트할 때는 `model` 값을 바꿔 가며 응답 시간을 함께 확인해 보세요. Ollama와 Gemini의 속도 차이를 직접 체감해 보는 것이 학습에 도움이 됩니다.
+### 어떻게 하는가
 
-> **Spring Boot 복습**: `@RestController`는 `@Controller` + `@ResponseBody`의 조합으로, 메서드 반환값을 JSON으로 자동 변환합니다. `@PostMapping`은 HTTP POST 요청을 매핑하고, `@RequestBody`는 요청 본문 JSON을 자바 객체로 바꿔 줍니다.
-
-### SearchController
-
-이 프로젝트는 같은 문장을 세 가지 패턴으로 처리해 비교할 수 있도록 엔드포인트 세 개를 둡니다. 각 패턴은 Step 9~11에서 차례로 배우고, 이 단계에서는 요청이 어떻게 들어와 서비스로 넘어가는지만 봅니다.
-
-`src/main/java/net/java21/flyschedule/controller/SearchController.java` (주석 생략)
+파일: `src/main/java/net/java21/flyschedule/controller/SearchController.java`
 
 ```java
 @Slf4j
@@ -506,15 +316,7 @@ public class SearchController {
         return handle(FlightSearchCoordinator.PATTERN, request, coordinator::coordinate);
     }
 
-    @PostMapping("/tool-calling")
-    public SearchResponse toolCalling(@RequestBody SearchRequest request) {
-        return handle(ToolCallingSearchService.PATTERN, request, toolCallingService::search);
-    }
-
-    @PostMapping("/orchestrator")
-    public SearchResponse orchestrator(@RequestBody SearchRequest request) {
-        return handle(FlightSearchOrchestrator.PATTERN, request, orchestrator::orchestrate);
-    }
+    // ... 생략 (/tool-calling, /orchestrator도 같은 모양)
 
     private SearchResponse handle(String pattern, SearchRequest request,
                                   BiFunction<String, String, SearchResponse> searcher) {
@@ -527,47 +329,63 @@ public class SearchController {
 }
 ```
 
-요청 본문은 `SearchRequest` record로 받습니다. `model`을 생략하면 `null`이 넘어가고, `ChatClientProvider.get()`이 Ollama를 고릅니다.
+요청 본문은 `SearchRequest` record로 받습니다(`src/main/java/net/java21/flyschedule/dto/request/SearchRequest.java`).
 
 ```java
 public record SearchRequest(String message, String model) {
 }
 ```
 
-| 엔드포인트 | 패턴 | 다음 단계를 누가 정하는가 | 학습 단계 |
+**코드 읽기**
+
+1. 세 엔드포인트가 모두 `handle()`을 거칩니다. 빈 문장 검사와 요청 로그를 한곳에서 처리하고, 실제 검색은 `BiFunction<message, model, SearchResponse>`로 받은 서비스 메서드에 맡깁니다.
+2. `model`을 생략하면 `null`이 넘어가고, `ChatClientProvider.get()`이 Ollama를 고릅니다.
+3. 세 패턴은 같은 `SearchResponse` 형식으로 응답하므로 화면이 결과를 나란히 비교할 수 있습니다.
+
+| 엔드포인트 | 패턴 | 다음 단계를 누가 정하는가 | 학습 Step |
 |------------|------|---------------------------|-----------|
-| `POST /api/search/coordinator` | Coordinator | 코드 | Step 9 |
+| `POST /api/search/coordinator` | Coordinator 패턴 | 코드 | Step 9 |
 | `POST /api/search/tool-calling` | Tool Calling 에이전트 | LLM | Step 10 |
-| `POST /api/search/orchestrator` | Orchestrator-Workers | LLM(계획·종합) + 코드(실행) | Step 11 |
+| `POST /api/search/orchestrator` | Orchestrator-Workers 패턴 | LLM(계획·종합) + 코드(실행) | Step 11 |
+
+### 확인하기
+
+```bash
+./mvnw test -Dtest=SearchControllerTest
+```
 
 ---
 
-## Step 2-4: 실행 및 테스트
+## Step 2-5: 실행 및 테스트
 
-### 1. 애플리케이션 실행
+### 어떻게 하는가
+
+Step 1처럼 `DATA_GO_KR_SERVICE_KEY`를 설정하고 애플리케이션을 실행합니다.
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-### 2. Ollama로 테스트
-
-공항 이름이 두 개 들어 있으면 정규식으로 처리되어 LLM을 부르지 않습니다. LLM 호출을 직접 보려면 정규식이 인식하지 못하는 문장(예: 영어)을 보내 보세요.
+**1) 정규식으로 처리되는 문장 (LLM 호출 없음)**
 
 ```bash
-# 정규식으로 처리 (LLM 호출 없음)
 curl -X POST http://localhost:8080/api/search/coordinator \
   -H "Content-Type: application/json" \
   -d '{"message": "내일 광주에서 제주로 가는 항공편 알려줘"}'
+```
 
-# 공항 이름을 찾지 못해 LLM(.entity)으로 처리
+**2) LLM이 처리하는 문장 (Ollama)**
+
+한국어 공항 이름이 없으면 정규식이 실패하므로 LLM의 `.entity()`가 쓰입니다.
+
+```bash
 curl -X POST http://localhost:8080/api/search/coordinator \
   -H "Content-Type: application/json" \
   -d '{"message": "flights from Gwangju to Jeju tomorrow", "model": "ollama"}' \
   -w "\n응답 시간: %{time_total}초\n"
 ```
 
-### 3. Gemini로 테스트
+**3) 같은 문장을 Gemini로**
 
 ```bash
 curl -X POST http://localhost:8080/api/search/coordinator \
@@ -576,17 +394,20 @@ curl -X POST http://localhost:8080/api/search/coordinator \
   -w "\n응답 시간: %{time_total}초\n"
 ```
 
-`GOOGLE_GENAI_API_KEY`를 설정하지 않았다면 `success: false`와 함께 "Gemini API 키가 설정되지 않았습니다..."라는 안내가 돌아옵니다.
+`GOOGLE_GENAI_API_KEY`를 설정하지 않았다면 `success: false`와 함께 "Gemini API 키가 설정되지 않았습니다..." 안내가 돌아옵니다.
 
-**예상 응답 (형태, 일부 생략):**
+### 확인하기
+
+응답은 다음과 같은 모양입니다(일부 생략). 항공편 번호와 가격은 실행하는 날의 실제 운항 정보에 따라 달라집니다.
+
 ```json
 {
   "pattern": "coordinator",
   "success": true,
-  "message": "광주 → 제주 · 2026-10-16: 12편, 최저가 진에어 LJ0571 07:10 출발 45,900원",
+  "message": "광주 → 제주 · 2026-10-17: 12편, 최저가 진에어 LJ0571 07:10 출발 45,900원",
   "results": [
     {
-      "label": "광주 → 제주 · 2026-10-16",
+      "label": "광주 → 제주 · 2026-10-17",
       "flightsByAirline": { "아시아나항공": [ ... ], "진에어": [ ... ] },
       "totalCount": 12,
       "cheapest": { "flightId": "LJ0571", "airline": "진에어", "departureTime": "07:10", "price": 45900, ... }
@@ -600,223 +421,155 @@ curl -X POST http://localhost:8080/api/search/coordinator \
 }
 ```
 
-`trace`의 첫 단계 `kind`가 `CODE`(정규식)인지 `LLM`인지 비교해 보세요. 항공편 번호와 가격은 실행하는 날의 실제 운항 정보에 따라 달라집니다.
+- 1)의 첫 단계는 `"kind": "CODE"`, `"title": "정규식으로 검색 조건 추출"`입니다.
+- 2)와 3)의 첫 단계는 `"kind": "LLM"`, `"title": "LLM으로 검색 조건 추출"`입니다.
+- `elapsedMs`를 비교하면 LLM 호출이 전체 시간의 대부분을 차지한다는 것을 알 수 있습니다.
 
-### 브라우저 테스트
-
-이 엔드포인트는 POST 요청이므로 브라우저 주소창으로는 호출할 수 없습니다. 대신 `http://localhost:8080`에 접속하면 문장과 모델을 고르고 세 패턴을 실행해 결과와 실행 기록(타임라인)을 비교하는 화면을 쓸 수 있습니다.
-
----
-
-## Step 2-5: ChatClient 고급 기능
-
-### 시스템 프롬프트 설정
-
-LLM의 역할과 동작 방식을 정의할 수 있습니다.
-
-```java
-public String askWithSystemPrompt(String question) {
-    return ollamaChatClient.prompt()
-            .system("너는 항공편 검색 도우미야. 친절하게 답변해줘.")  // 시스템 프롬프트
-            .user(question)
-            .call()
-            .content();
-}
-```
-
-### 대화 기록 유지 (Conversational Memory)
-
-```java
-public String chatWithMemory(String userMessage, List<Message> history) {
-    return ollamaChatClient.prompt()
-            .messages(history)  // 이전 대화 기록
-            .user(userMessage)
-            .call()
-            .content();
-}
-```
-
-### 스트리밍 응답
-
-```java
-public void streamChat(String question) {
-    ollamaChatClient.prompt()
-            .user(question)
-            .stream()  // 스트리밍 모드
-            .content()  // Flux<String>
-            .doOnNext(chunk -> System.out.print(chunk))  // 토큰 단위 출력
-            .blockLast();  // 예제에서는 스트림이 끝날 때까지 대기
-}
-```
-
-### 구조화된 응답 (Entity)
-
-```java
-public SearchCriteria extractCriteria(String message) {
-    return ollamaChatClient.prompt()
-            .user(message)
-            .call()
-            .entity(SearchCriteria.class);  // JSON → 자바 객체 (net.java21.flyschedule.dto.search)
-}
-```
-
-실제 프로젝트에서는 `SearchCriteriaExtractor`(Step 2-2)와 `FlightSearchPlanner`(`.entity(SearchPlan.class)`, Step 11)가 이 기능을 사용합니다.
+브라우저에서는 `http://localhost:8080`에서 문장과 모델을 고르고 세 패턴을 실행해, 결과와 실행 기록(타임라인)을 비교할 수 있습니다.
 
 ---
 
-## Step 2-6: 디버깅과 모니터링
+## Step 2-6: ChatClient의 다른 기능
 
-### 로깅 설정
+이 프로젝트에서 직접 쓰지는 않지만 알아 두면 좋은 기능입니다. 아래 코드는 설명용 예시이며 프로젝트에 들어 있지 않습니다.
 
-`application.yml`에 Spring AI 로그 레벨 설정:
+```java
+// 대화 기록 넘기기: 이전 메시지 목록(List<Message>)을 함께 보낸다
+String answer = chatClient.prompt()
+        .messages(history)
+        .user(userMessage)
+        .call()
+        .content();
+
+// 스트리밍: 응답을 토큰 묶음 단위로 받는다 (Flux<String>)
+chatClient.prompt()
+        .user(question)
+        .stream()
+        .content()
+        .doOnNext(System.out::print)
+        .blockLast();   // 예제에서만 끝날 때까지 기다린다
+```
+
+**코드 읽기**
+
+- `.messages(history)`: LLM은 이전 대화를 기억하지 못하므로, 대화를 이어 가려면 기록을 매번 함께 보내야 합니다. Spring AI의 `MessageChatMemoryAdvisor`가 이 일을 대신해 줍니다(Step 4 심화 학습).
+- `.stream()`: 긴 답변을 화면에 조금씩 보여 줄 때 씁니다.
+
+> **주의**: 이 프로젝트의 Tool 호출 기록(`ToolResultCapture`, Step 4)은 `call()`에서 Tool이 같은 스레드에서 실행된다는 점에 기대고 있습니다. `stream()`에서는 Tool이 다른 스레드에서 실행되므로 이 방식이 동작하지 않습니다. 그래서 이 프로젝트는 `call()`만 씁니다.
+
+---
+
+## Step 2-7: 로그로 프롬프트 확인하기
+
+### 왜 필요한가
+
+`.entity()`가 실패하거나 LLM이 이상한 답을 하면, 실제로 어떤 프롬프트가 나갔는지 봐야 원인을 찾을 수 있습니다. `ChatClientConfig`에서 등록한 `SimpleLoggerAdvisor`가 요청과 응답을 DEBUG 레벨로 남기므로, 그 로거의 레벨만 올리면 됩니다.
+
+### 어떻게 하는가
+
+파일: `src/main/resources/application.yml`에 추가
 
 ```yaml
 logging:
   level:
-    org.springframework.ai: DEBUG
+    org.springframework.ai.chat.client.advisor: DEBUG
 ```
 
-로그 레벨만 올린다고 프롬프트와 응답 내용이 출력되지는 않습니다. 요청/응답 내용은 ChatClient에 등록한 `SimpleLoggerAdvisor`가 DEBUG 레벨로 남깁니다. 이 프로젝트는 `ChatClientConfig`에서 이미 등록해 두었으므로, `org.springframework.ai.chat.client.advisor` 로거를 DEBUG로 올리면 바로 볼 수 있습니다(Step 4에서 학습).
+### 확인하기
 
-### 로그 예시
-
-`SimpleLoggerAdvisor`를 등록하면 DEBUG 레벨로 다음과 같은 로그가 출력됩니다 (줄여서 표시):
+영어 문장으로 다시 검색하면 콘솔에 다음과 같은 로그가 나옵니다(줄여서 표시).
 
 ```text
-DEBUG o.s.a.c.c.advisor.SimpleLoggerAdvisor - request: ChatClientRequest[prompt=Prompt{messages=[UserMessage{content='안녕하세요', ...}], ...}, context={}]
-DEBUG o.s.a.c.c.advisor.SimpleLoggerAdvisor - response: { "result" : { "output" : { "text" : "안녕하세요! 무엇을 도와드릴까요?", ... } } }
+DEBUG o.s.a.c.c.a.SimpleLoggerAdvisor - request: ChatClientRequest[prompt=Prompt{messages=[SystemMessage{textContent='항공편 검색 문장에서 검색 조건을 추출합니다. ...'}, UserMessage{content='flights from Gwangju to Jeju tomorrow', ...}], ...}, context={...}]
+DEBUG o.s.a.c.c.a.SimpleLoggerAdvisor - response: { "result" : { "output" : { "text" : "{\"departure\":\"광주\",\"arrival\":\"제주\",\"date\":\"2026-10-17\", ...}", ... } } }
 ```
 
----
-
-## Ollama vs Gemini 실제 성능 비교
-
-| 항목 | Ollama (Qwen 2.5) | Gemini (2.5 Flash) |
-|------|------------------|-------------------|
-| **평균 응답 시간** | 30~60초 | 3~5초 |
-| **한국어 질문** | "스프링이란?" | "스프링이란?" |
-| **응답 품질** | 상세하지만 느림 | 간결하고 빠름 |
-| **추천 용도** | 개발, 테스트 | 실시간 서비스 |
-
----
-
-## ChatClient 패턴 이해
-
-### 패턴 1: 빌더 패턴 (Builder Pattern)
-
-```java
-ChatClient.builder(chatModel)
-    .defaultAdvisors(new SimpleLoggerAdvisor())  // 모든 요청에 적용할 기본 Advisor
-    .build();                                    // ChatClient 생성
-// defaultTools(...)로 Tool을 기본 등록할 수도 있지만, 이 프로젝트는 요청마다 .tools(...)를 씁니다 (Step 3)
-```
-
-### 패턴 2: 유창한 API (Fluent API)
-
-```java
-chatClient
-    .prompt()                         // 프롬프트 시작
-    .system("시스템 프롬프트")        // 시스템 역할
-    .user("사용자 질문")              // 사용자 질문
-    .advisors(advisors)               // Advisor 적용
-    .call()                           // 호출
-    .content();                       // 결과 반환
-```
+시스템 프롬프트 뒤에 Spring AI가 덧붙인 JSON 스키마 지시와, LLM이 돌려준 JSON 문자열을 찾아보세요. Advisor는 Step 4에서 자세히 다룹니다.
 
 ---
 
 ## 일반적인 문제 해결
 
-### 문제 1: No qualifying bean of type ChatClient
+### `No qualifying bean of type 'org.springframework.ai.chat.client.ChatClient'`
 
-**에러 메시지:**
-```text
-No qualifying bean of type 'org.springframework.ai.chat.client.ChatClient'
-```
+- `expected single matching bean but found 2`가 함께 나오면, 주입받는 쪽에 `@Qualifier("ollamaChatClient")`처럼 빈 이름을 적지 않은 것입니다.
+- 빈이 아예 없다고 나오면 `ChatClientConfig`가 `@Configuration`이고 `net.java21.flyschedule` 패키지 아래에 있는지 확인합니다.
 
-**원인:** `ChatClient` 빈이 생성되지 않았거나, 같은 타입 빈이 2개인데 이름을 지정하지 않음
+### "LLM 서버에 연결할 수 없습니다"
 
-**해결 방법:**
-1. `ChatClientConfig.java`에 `@Bean` 메서드가 있는지 확인
-2. 주입받는 쪽에 `@Qualifier("ollamaChatClient")`처럼 빈 이름을 지정했는지 확인 (`expected single matching bean but found 2` 오류라면 이것이 원인)
-3. `@ComponentScan`이 설정 패키지를 포함하는지 확인
+`ChatClientProvider.describeError()`가 연결 실패를 바꾼 문장입니다. `spring.ai.ollama.base-url`과 Ollama 서버 상태를 확인합니다(Step 1).
 
-### 문제 2: Ollama 연결 실패
+### "Gemini API 키가 올바르지 않습니다"
 
-**에러 메시지:**
-```text
-Connection refused: ollama.java21.net
-```
+Gemini가 `API key not valid` 오류를 돌려준 경우입니다. `GOOGLE_GENAI_API_KEY` 값과 할당량(Quota)을 확인합니다. 키를 아예 설정하지 않았다면 LLM을 호출하기 전에 `ChatClientProvider.get()`이 "Gemini API 키가 설정되지 않았습니다..."라고 안내합니다.
 
-화면과 API 응답에는 `ChatClientProvider.describeError()`가 바꾼 문장 "LLM 서버에 연결할 수 없습니다. Ollama가 실행 중인지(spring.ai.ollama.base-url) 확인하거나 다른 모델을 선택하세요."가 `message`로 담깁니다.
+### "출발 공항과 도착 공항을 찾지 못했습니다"
 
-**해결 방법:**
-1. Ollama 서버 실행 중인지 확인
-2. `application.yml`의 `base-url` 확인
-3. 로컬 Ollama 사용 시: `http://localhost:11434`
+LLM이 `departure`나 `arrival`을 비워 돌려준 경우입니다. 작은 Ollama 모델에서 자주 생깁니다. Gemini로 바꾸거나, 문장에 한글 공항 이름을 넣어 정규식 경로로 처리되게 합니다.
 
-### 문제 3: Gemini API 키 오류
+### 응답이 너무 느림
 
-**에러 메시지 (예시):**
-```text
-400 Bad Request: API key not valid. Please pass a valid API key.
-```
-
-응답 `message`에는 "Gemini API 키가 올바르지 않습니다. GOOGLE_GENAI_API_KEY를 확인하세요."가 담깁니다. 키를 아예 설정하지 않았다면 LLM을 호출하기 전에 `ChatClientProvider.get()`이 "Gemini API 키가 설정되지 않았습니다..."라고 안내합니다.
-
-**해결 방법:**
-1. `GOOGLE_GENAI_API_KEY` 환경 변수 설정 확인
-2. API 키 유효성 확인
-3. 할당량(Quota) 초과 여부 확인
-
-### 문제 4: 응답 시간이 너무 김
-
-**해결 방법:**
-1. Ollama → Gemini로 변경 (속도 향상)
-2. `max-tokens`(Ollama) 또는 `max-output-tokens`(Gemini) 줄이기
-3. 더 작은 모델 사용 또는 `num-ctx` 조정 (Ollama)
+Gemini로 바꾸거나, `max-tokens`(Ollama)·`max-output-tokens`(Gemini)를 줄여 봅니다. 정규식으로 처리되는 문장은 LLM을 부르지 않으므로 빠릅니다.
 
 ---
 
 ## 실습 과제
 
-1. **(기본)** `curl`로 `POST /api/search/coordinator`에 한국어 문장과 영어 문장을 각각 보내고, 응답 `trace`의 첫 단계 `kind`가 `CODE`와 `LLM` 중 무엇인지, `elapsedMs`가 얼마나 차이 나는지 비교해 보세요.
-2. **(기본)** `GOOGLE_GENAI_API_KEY` 없이 `"model": "gemini"`로 위 두 문장을 보내 보세요. 한국어 문장은 성공하고 영어 문장은 안내 메시지가 나오는 이유를 `SearchCriteriaExtractor.extract()`가 `Supplier<ChatClient>`를 받는다는 점과 연결해 설명하세요.
-3. **(도전)** `ChatClientProviderTest`를 참고해, 대문자 `"GEMINI"`나 알 수 없는 값(`"gpt"`)을 넘겼을 때 `get()`과 `normalize()`가 어떻게 동작하는지 확인하는 테스트를 추가하세요.
-4. **(도전)** `SearchCriteria`의 `date` 필드 설명을 바꾸거나 지워 보고, 영어 문장을 보냈을 때 LLM이 돌려주는 날짜 형식이 어떻게 달라지는지 관찰하세요. `@JsonPropertyDescription`이 Structured Output에서 하는 역할을 정리하세요.
+### 과제 1 (기본): 정규식 경로와 LLM 경로 비교
+
+한국어 문장 `내일 광주에서 제주로 가는 항공편 알려줘`와 영어 문장 `flights from Gwangju to Jeju tomorrow`를 각각 `POST /api/search/coordinator`로 보냅니다.
+
+- 힌트: Step 2-5의 curl 명령, 응답의 `trace[0]`
+- 완료 기준: 두 응답의 `trace[0].kind`(`CODE`/`LLM`)와 `elapsedMs`를 표로 정리하고, 차이가 나는 이유를 한 문장으로 설명한다.
+
+### 과제 2 (기본): Supplier<ChatClient>의 효과 확인
+
+`GOOGLE_GENAI_API_KEY` 없이 `"model": "gemini"`로 과제 1의 두 문장을 보냅니다.
+
+- 힌트: `SearchCriteriaExtractor.extract()`에서 `chatClient.get()`이 불리는 위치
+- 완료 기준: 한국어 문장은 `success: true`, 영어 문장은 키 안내 메시지가 나오는 것을 확인하고, 그 이유를 `Supplier`와 연결해 설명한다.
+
+### 과제 3 (도전): ChatClientProvider 테스트 추가
+
+`ChatClientProviderTest`에 알 수 없는 모델 이름(`"gpt"`, 빈 문자열 `""`)을 넘기는 테스트를 추가합니다.
+
+- 힌트: 기존 `selectsByModelName()`과 `normalize()` 테스트를 본뜹니다.
+- 완료 기준: `get("gpt")`와 `get("")`이 Ollama 클라이언트를, `normalize("gpt")`가 `"ollama"`를 돌려준다는 단언이 들어간 테스트가 `./mvnw test -Dtest=ChatClientProviderTest`로 통과한다.
+
+### 과제 4 (도전): @JsonPropertyDescription의 역할 관찰
+
+`SearchCriteria.date`의 설명을 `"출발 날짜"`로 바꾸고(형식 안내 제거), Step 2-7의 로그를 켠 채 영어 문장을 Ollama로 여러 번 보냅니다.
+
+- 힌트: 로그의 request에 포함된 JSON 스키마, response의 `date` 값
+- 완료 기준: 설명을 바꾸기 전과 후의 `date` 형식을 비교해 적고, Structured Output에서 필드 설명이 하는 역할을 두세 문장으로 정리한다. 실험 뒤 원래대로 되돌린다.
 
 ---
 
 ## 요약
 
-이번 단계에서는 Spring AI의 ChatClient를 사용하여 LLM과 대화하는 전체 흐름을 구현했습니다:
+- `ChatModel`은 제공자와 통신하고, `ChatClient`는 프롬프트를 조립·호출하는 공통 API입니다.
+- `ChatClientConfig`가 모델별 `ChatClient` 빈 두 개를 만들고, Advisor는 기본 등록하되 Tool은 등록하지 않습니다.
+- `ChatClientProvider`가 요청의 `model` 값으로 `ChatClient`를 고르고, 키 누락·연결 실패를 안내 문장으로 바꿉니다.
+- `SearchCriteriaExtractor`는 정규식을 먼저 쓰고, 실패하면 `.entity(SearchCriteria.class)`로 LLM의 Structured Output을 받습니다.
+- 세 엔드포인트 `POST /api/search/{coordinator|tool-calling|orchestrator}`는 같은 `SearchResponse` 형식으로 응답합니다.
 
-1. **ChatClientConfig**: `@Configuration` 클래스에서 `ollamaChatClient`, `geminiChatClient` 두 `ChatClient`를 Bean으로 등록했습니다. Tool은 기본 등록하지 않습니다
-2. **ChatClientProvider**: 요청의 `model` 값으로 ChatClient를 고르고, Gemini 키가 없거나 LLM 서버에 연결할 수 없을 때 안내 문장을 만듭니다
-3. **SearchCriteriaExtractor**: `prompt().system().user().call().entity(SearchCriteria.class)`로 LLM 응답을 자바 record로 받았습니다
-4. **SearchController**: `POST /api/search/{coordinator|tool-calling|orchestrator}`로 요청을 받아 각 패턴의 서비스에 넘깁니다
-5. **핵심 인사이트**: Ollama와 Gemini 모두 동일한 ChatClient API로 사용할 수 있어, 모델을 교체해도 코드 변경이 거의 없습니다
-
-다음 단계에서는 LLM이 자바 메서드를 직접 호출할 수 있는 "Function Calling" 기능을 배우겠습니다.
+지금까지는 LLM이 글(또는 JSON)만 돌려줬습니다. Step 3에서는 LLM이 우리가 만든 자바 메서드를 호출하게 해, 실시간 데이터를 다루게 합니다.
 
 ---
 
 ## 체크리스트
 
-- [ ] `ChatClientConfig.java`의 두 `ChatClient` 빈과 `defaultTools`를 쓰지 않는 이유를 설명할 수 있음
-- [ ] `ChatClientProvider.get()`이 모델을 고르는 규칙을 이해함
-- [ ] `.content()`와 `.entity(Class)`의 차이를 이해함
-- [ ] `POST /api/search/coordinator`를 curl로 호출해 봄
-- [ ] Ollama로 자연어 검색이 동작함
-- [ ] Gemini로 자연어 검색이 동작함 (키를 설정한 경우)
-- [ ] 응답 시간 차이를 확인함 (Ollama vs Gemini)
-- [ ] 콘솔에서 Spring AI 로그 확인됨
+- [ ] `ChatClient`와 `ChatModel`이 각각 무엇을 하는지 설명할 수 있다. (목표 1)
+- [ ] `ChatClientConfig`의 두 빈과 `@Qualifier`의 쓰임, `defaultTools`를 쓰지 않는 이유를 설명할 수 있다. (목표 2)
+- [ ] `ChatClientProvider.get()`의 선택 규칙과 `describeError()`가 바꾸는 오류를 설명하고, `ChatClientProviderTest`를 실행했다. (목표 3)
+- [ ] `.content()`와 `.entity(Class)`의 차이를 설명하고, `SearchCriteriaExtractorTest`를 실행했다. (목표 4)
+- [ ] curl로 `/api/search/coordinator`를 호출해 `trace[0].kind`로 정규식 경로와 LLM 경로를 구분했다. (목표 5)
 
 ---
 
 ## 다음 단계
 
-[Step 3: Function Calling 기초](step-3-function-calling.md)에서 LLM이 자바 메서드를 호출하는 방법을 학습합니다.
+[Step 3: Function Calling 기초](step-3-function-calling.md)에서 `@Tool`로 LLM이 호출할 수 있는 자바 메서드를 만들고, 요청마다 `.tools(...)`로 넘기는 방법을 배웁니다.
 
 ---
 
@@ -831,9 +584,9 @@ Connection refused: ollama.java21.net
 
 ## 심화 학습
 
-### ChatClient.Builder를 빈으로 등록하는 방법과 비교
+### ChatClient 빈과 ChatClient.Builder 빈
 
-`ChatClient.Builder`를 Bean으로 등록하고 서비스마다 `build()`하는 방법도 있습니다.
+`ChatClient.Builder`를 빈으로 등록하고 서비스마다 `build()`하는 방법도 있습니다(설명용 예시).
 
 ```java
 @Bean
@@ -849,7 +602,7 @@ public MyService(@Qualifier("ollamaChatClientBuilder") ChatClient.Builder builde
 
 | 방식 | 장점 | 주의할 점 |
 |------|------|-----------|
-| `ChatClient` 빈 (이 프로젝트) | 설정이 한 곳에 모이고, 서비스는 바로 사용 | 서비스별 기본값이 필요하면 `mutate()`로 복사본을 만듦 |
-| `ChatClient.Builder` 빈 | 서비스마다 다른 기본값을 붙이기 쉬움 | Builder는 변경 가능한 객체라, 같은 Builder를 여러 곳에서 고치면 설정이 섞일 수 있음 |
+| `ChatClient` 빈 (이 프로젝트) | 기본 설정이 `ChatClientConfig` 한곳에 모이고, 서비스는 바로 사용 | 서비스별 기본값이 필요하면 `chatClient.mutate()`로 복사한 빌더에서 새로 만듦 |
+| `ChatClient.Builder` 빈 | 서비스마다 다른 기본값을 붙이기 쉬움 | Builder는 변경 가능한(mutable) 객체라, 같은 Builder를 여러 곳에서 고치면 설정이 섞일 수 있음 |
 
-이 프로젝트는 서비스마다 다른 점이 시스템 프롬프트와 Tool 정도이고, 둘 다 요청마다 `.system(...)`, `.tools(...)`로 넘기므로 `ChatClient` 빈 방식을 택했습니다.
+이 프로젝트에서 서비스마다 다른 것은 시스템 프롬프트와 Tool 정도이고, 둘 다 요청마다 `.system(...)`, `.tools(...)`로 넘기므로 `ChatClient` 빈 방식을 택했습니다.

@@ -62,7 +62,7 @@
 | `@Tool` / `@ToolParam` | 메서드와 파라미터를 Tool로 등록하고 LLM이 읽을 설명을 붙이는 Spring AI 어노테이션 | [4장](./04-tool-calling.md) |
 | Tool Calling | LLM이 "이 Tool을 이 인자로 불러 달라"고 요청하고 애플리케이션이 실행해 결과를 돌려주는 방식 | [4장](./04-tool-calling.md) |
 | Tool Calling Agent | LLM 하나가 Tool 목록을 받아 어떤 Tool을 언제 부를지 정하는 구조. `ToolCallingSearchService` | [8장](./08-tool-calling-agent.md) |
-| `ToolResultCapture` | Tool 호출 이름·인자·결과·시간을 `ThreadLocal`에 모아 실행 기록의 TOOL 단계로 만드는 도구 | [5장](./05-domain-tools.md) |
+| `ToolResultCapture` | Tool 호출 이름·인자·결과·시간을 `ThreadLocal`에 모으고, `bind()`로 연결한 실행 기록에 Tool 실행 즉시 TOOL 단계를 남기는 도구 | [5장](./05-domain-tools.md) |
 | Trace (실행 기록) | 한 요청이 거친 단계를 CODE·LLM·TOOL·WORKER로 구분해 남긴 기록 | [들어가며](./00-introduction.md) |
 | `TraceStep` | 실행 기록 한 줄. 종류(kind), 실행 주체(actor), 시작 시각, 걸린 시간, 스레드 이름을 가짐 | [7장](./07-coordinator.md) |
 | Worker | Orchestrator가 맡긴 하위 작업 하나를 실행하는 쪽. `FlightSearchWorker`는 Coordinator의 검색 단계를 재사용 | [9장](./09-orchestrator-workers.md) |

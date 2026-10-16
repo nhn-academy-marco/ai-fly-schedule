@@ -340,8 +340,8 @@ Tool Calling을 쓰면 코드에서 LLM 호출은 `call()` 한 번이지만, 모
 - 완료 기준: 응답이 문장이 아니라 Tool 반환값 `42` 그대로 오는 것을 확인하고, 이 옵션이 어울리는 상황을 한 가지 적는다.
 
 **4. [도전] 선택 파라미터와 required**
-`FlightSearchTool.searchFlightsByPriceRange`의 `minPrice`, `maxPrice`는 description에 "선택사항"이라고 적혀 있지만 `@ToolParam`에 `required`를 지정하지 않았습니다.
-- 힌트: `@ToolParam.required`의 기본값은 `true`입니다. 계산기에 `@ToolParam(description = "...", required = false) Long c` 같은 파라미터를 추가해 Tool 정의가 어떻게 달라지는지 비교해 봅니다.
-- 완료 기준: 지금 코드에서 두 파라미터가 LLM에게 필수로 전달된다는 것을 설명하고, "선택"을 스키마에 정확히 반영하려면 무엇을 바꿔야 하는지 한 문장으로 쓴다(src는 고치지 않는다).
+`FlightSearchTool.searchFlightsByPriceRange`의 `minPrice`, `maxPrice`는 `@ToolParam(description = "최소 가격(원). 조건이 없으면 생략", required = false)`입니다. `required = false`가 Tool 정의를 어떻게 바꾸는지 계산기로 확인합니다.
+- 힌트: `@ToolParam.required`의 기본값은 `true`입니다. 계산기에 `@ToolParam(description = "...", required = false) Long c` 같은 파라미터를 추가하고, `required`를 뺐을 때와 넣었을 때 Tool 정의(JSON 스키마의 `required` 목록)를 비교해 봅니다.
+- 완료 기준: `required = false`가 없으면 파라미터가 LLM에게 필수로 전달된다는 것을 설명하고, 선택 파라미터의 타입을 `long`이 아니라 `Long`으로 써야 하는 이유를 한 문장으로 쓴다.
 
 계산기는 원리를 보기 위한 장난감이었습니다. 다음 장에서는 공공데이터 포털의 실제 운항 정보로 항공편 검색 Tool 7개를 만들고, Tool을 어떻게 설계해야 작은 LLM도 잘 쓰는지 살펴봅니다. [5장 항공편 도메인 Tool 만들기](05-domain-tools.md)

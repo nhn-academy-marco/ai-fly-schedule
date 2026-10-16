@@ -440,7 +440,7 @@ LLM은 Tool의 코드를 보지 못합니다. Spring AI가 LLM에게 보내는 �
 
 - **공항은 이름으로 받습니다.** 코드로 받으면 LLM이 `NAARKJJ`를 외워야 하고, 작은 모델은 코드를 지어냅니다. 이름을 받아 Tool 안쪽(`AirportCodeAgent`)에서 바꾸면 LLM은 사용자 말을 옮기기만 하면 됩니다. 코드가 넘어와도 `AirportCodeAgent`가 그대로 받아 줍니다.
 - **날짜는 형식 하나를 못 박습니다.** `@ToolParam`에 "YYYY-MM-DD 형식 (예: 2026-03-25)"을 적었습니다. 형식이 열려 있으면 작은 모델은 "10월 17일", "내일" 같은 값을 제멋대로 넘깁니다. 형식을 정해 두면 LLM이 system 프롬프트의 오늘 날짜를 보고 계산해 넘깁니다(8장). 그래도 "내일"이 넘어오면 `DateParserAgent`가 받아 줍니다.
-- **선택 인자는 `Integer`로 받습니다.** `searchFlightsByPriceRange`의 `minPrice`, `maxPrice`는 `int`가 아니라 `Integer`라서 LLM이 생략하면 `null`이 됩니다. 설명에도 "선택사항"이라고 적었습니다.
+- **선택 인자는 `Integer`와 `required = false`로 받습니다.** `searchFlightsByPriceRange`의 `minPrice`, `maxPrice`는 `@ToolParam(description = "최소 가격(원). 조건이 없으면 생략", required = false)`입니다. `required = false`가 있어야 JSON 스키마에서 필수 인자가 아니게 되고, `int`가 아니라 `Integer`라서 LLM이 생략하면 `null`이 됩니다. 설명에 단위(원)와 "생략"을 적어 두면 작은 모델이 `0`이나 `"없음"`을 채워 넣는 일이 줄어듭니다.
 - **Tool은 혼자서 완결됩니다.** 항공편 검색 Tool은 공항 이름을 직접 받아 안에서 코드로 바꿉니다. `getAirportCode`를 먼저 불러야만 검색할 수 있게 만들면, LLM이 순서를 틀릴 때마다 실패합니다. 상태도 두지 않습니다. `setDeparture()`를 먼저 부르고 `search()`를 부르는 식의 Tool은 LLM이 순서를 어기거나 다른 요청이 끼어들면 틀어집니다.
 
 ### 원칙 4. 결과 크기를 제한한다
@@ -490,7 +490,7 @@ Tool이 실패했을 때 빈 결과나 `"오류"` 같은 문자열을 돌려주�
 Tool 메서드에서 예외가 나면 Spring AI는 기본 설정에서 그 예외 메시지를 Tool 결과로 LLM에게 돌려줍니다([Spring AI Tool Calling 문서](https://docs.spring.io/spring-ai/reference/api/tools.html)의 Tool 오류 처리). LLM은 "알 수 없는 공항입니다: 서울"을 읽고 "김포"로 다시 시도하거나, 사용자에게 사정을 설명합니다. 예외 메시지가 LLM이 읽을 문장이 되는 셈이므로, 메시지는 사람이 읽을 수 있는 한국어로 구체적으로 씁니다.
 
 > **생각해 보기**
-> `searchFlightsByAirline`의 설명에는 날짜 형식과 "항공사별 최대 3편"이 모두 들어 있습니다. `searchFlightsAfterTime`과 `searchFlightsByPriceRange`의 `description`을 열어 비교해 보세요. 무엇이 빠져 있고, 그 때문에 LLM이 어떤 실수를 할 수 있을까요? (연습 문제 2)
+> 세 항공편 Tool의 `description`에는 모두 날짜 형식(YYYY-MM-DD)과 "항공사별 최대 3편"이 들어 있습니다. 한 Tool에서만 이 문장을 빼면 LLM이 어떤 실수를 할 수 있을까요? Tool 설명은 하나만 잘 쓰는 것이 아니라 **함께 넘기는 Tool끼리 같은 수준으로** 맞춰야 합니다.
 
 ---
 
@@ -515,6 +515,8 @@ Tool Calling에서 `ChatClient.call().content()`가 돌려주는 것은 LLM이 �
     }
 
     private static final ThreadLocal<List<ToolCall>> CALLS = ThreadLocal.withInitial(ArrayList::new);
+    /** 연결된 실행 기록이 있으면 Tool이 실행되는 즉시 TOOL 단계로 남긴다 (화면에서 실시간으로 보임) */
+    private static final ThreadLocal<ExecutionTrace> LIVE_TRACE = new ThreadLocal<>();
 
     private ToolResultCapture() {
     }
@@ -527,13 +529,15 @@ Tool Calling에서 `ChatClient.call().content()`가 돌려주는 것은 LLM이 �
         long start = System.nanoTime();
         try {
             T result = action.get();
-            CALLS.get().add(new ToolCall(toolName, arguments, result, null, start, System.nanoTime()));
+            add(new ToolCall(toolName, arguments, result, null, start, System.nanoTime()));
             return result;
         } catch (RuntimeException e) {
-            CALLS.get().add(new ToolCall(toolName, arguments, null, e.getMessage(), start, System.nanoTime()));
+            add(new ToolCall(toolName, arguments, null, e.getMessage(), start, System.nanoTime()));
             throw e;
         }
     }
+
+    // ... bind(), add(), summarize()는 8장에서 봅니다
 
     /**
      * 지금까지의 호출 기록을 꺼내고 비웁니다. (호출 순서 유지)
@@ -541,6 +545,7 @@ Tool Calling에서 `ChatClient.call().content()`가 돌려주는 것은 LLM이 �
     public static List<ToolCall> getAndClear() {
         List<ToolCall> calls = List.copyOf(CALLS.get());
         CALLS.remove();
+        LIVE_TRACE.remove();
         return calls;
     }
 ```
@@ -552,7 +557,7 @@ Tool Calling에서 `ChatClient.call().content()`가 돌려주는 것은 LLM이 �
 - **값이 아니라 `Supplier`를 받습니다.** `capture(이름, 값)`이었다면 값은 이미 계산된 뒤라 실행 시간을 잴 수 없고, 계산 중 예외가 나면 기록할 기회도 없습니다. 작업 자체(`() -> ...`)를 받아 직접 실행하므로 시작·종료 시각(`startNanos`, `endNanos`)을 정확히 잴 수 있습니다. 이 시각이 8장 실행 기록 타임라인의 TOOL 구간이 됩니다.
 - **실패도 기록합니다.** 예외가 나면 `result`는 `null`, `error`에 메시지를 담아 기록하고, 예외는 **삼키지 않고 다시 던집니다.** 그래야 5.4절 원칙 5대로 Spring AI가 오류를 LLM에게 전달합니다. 기록만 하고 삼켰다면 Tool은 `null`을 돌려준 셈이 됩니다.
 - **`Map`이 아니라 `List`입니다.** LLM이 같은 Tool을 김포→제주, 광주→제주로 두 번 불러도 두 건이 순서대로 남습니다.
-- **인자는 사람이 읽을 요약 문자열입니다.** `FlightSearchTool`은 `"%s → %s, %s".formatted(...)`로 `광주 → 제주, 2026-10-17` 같은 요약을 넘깁니다.
+- **인자는 사람이 읽을 요약 문자열입니다.** `FlightSearchTool`은 `"%s → %s, %s".formatted(...)`로 `광주 → 제주, 2026-10-17` 같은 요약을 넘깁니다. 가격 Tool은 `priceRange()`로 `30,000~70,000원`, `60,000원 이하`, `가격 조건 없음`처럼 조건을 문장으로 붙입니다.
 - **기록과 반환이 한 문장입니다.** Tool 메서드가 `return capture(...)`로 끝나므로, 기록을 빠뜨리거나 다른 값을 기록하는 실수가 생기지 않습니다.
 
 ### ThreadLocal로 충분한 이유
@@ -569,20 +574,21 @@ sequenceDiagram
     participant T as FlightSearchTool(Tool)
     participant R as ToolResultCapture(ThreadLocal)
     S->>R: getAndClear()로 남은 기록 비우기
+    S->>R: bind(trace)로 실행 기록 연결
     S->>C: prompt().tools(...).call()
     rect rgb(241,235,253)
     C->>L: 질문과 Tool 7개 설명
     L-->>C: searchFlightsByAirline 호출 요청
     C->>T: searchFlightsByAirline(광주, 제주, 2026-10-17)
-    T->>R: capture()가 이름, 인자, 결과, 시각 기록
+    T->>R: capture()가 기록하고 TOOL 단계 바로 추가
     T-->>C: 항공사별 최대 3편
     C->>L: Tool 결과 전달
     L-->>C: 한국어 답변
     end
-    S->>R: getAndClear()로 기록 꺼내기
+    S->>R: getAndClear()로 기록 꺼내고 연결 풀기
 ```
 
-그림 읽기: 보라색 구간은 `call()` 한 번이고, 그 안에서 LLM 왕복이 두 번, Tool 실행이 한 번 일어납니다. `ToolCallingSearchService`는 `call()` 앞뒤로 `getAndClear()`를 불러, 구간 안에서 쌓인 기록만 꺼내 실행 기록과 결과 표를 만듭니다. 이 서비스의 전체 코드는 [8장](08-tool-calling-agent.md)에서 봅니다.
+그림 읽기: 보라색 구간은 `call()` 한 번이고, 그 안에서 LLM 왕복이 두 번, Tool 실행이 한 번 일어납니다. `ToolCallingSearchService`는 `call()` 앞뒤로 `getAndClear()`를 불러 구간 안에서 쌓인 기록만 꺼내고, 그 기록으로 결과 표를 만듭니다. `call()` 전에 `bind(trace)`로 실행 기록을 연결해 두므로, TOOL 단계는 `call()`이 끝나기를 기다리지 않고 Tool이 실행되는 즉시 실행 기록에 쌓입니다. 이 서비스의 전체 코드는 [8장](08-tool-calling-agent.md)에서 봅니다.
 
 | 구분 | 내용 |
 |---|---|
@@ -617,11 +623,11 @@ public class ToolResultCaptureCleanupFilter extends OncePerRequestFilter {
 
 - `OncePerRequestFilter`: 요청 하나에 한 번만 실행되는 서블릿 필터입니다. `@Component`만 붙이면 Spring Boot가 모든 요청에 적용합니다.
 - `finally`: 컨트롤러가 정상으로 끝나든 예외로 끝나든 요청이 끝날 때 반드시 `getAndClear()`를 부릅니다. 반환값은 버리고, 비우는 효과만 씁니다.
-- `ThreadLocal`을 쓰는 코드에는 "언제 비우는가"가 꼭 함께 있어야 합니다. 스레드 풀 환경에서 `ThreadLocal`을 비우지 않는 것은 흔한 메모리 누수와 데이터 섞임의 원인입니다.
+- `getAndClear()`는 `bind()`로 연결한 실행 기록(`LIVE_TRACE`)도 함께 풉니다. `ThreadLocal`을 쓰는 코드에는 "언제 비우는가"가 꼭 함께 있어야 합니다. 스레드 풀 환경에서 `ThreadLocal`을 비우지 않는 것은 흔한 메모리 누수와 데이터 섞임의 원인입니다.
 
 > **직접 확인하기**
 > `./mvnw test -Dtest='ToolResultCaptureTest,ToolResultCaptureCleanupFilterTest'`
-> 기대 결과: 모두 통과합니다. `ToolResultCaptureTest`의 "작업 결과를 그대로 돌려주고, 호출 순서대로 기록한다", "작업이 실패하면 실패로 기록하고 예외를 그대로 다시 던진다", "다른 스레드의 기록은 보이지 않는다"와, 필터 테스트의 "요청 처리 중 쌓인 Tool 기록을 요청이 끝나면 비운다"를 확인합니다.
+> 기대 결과: 모두 통과합니다. `ToolResultCaptureTest`의 "작업 결과를 그대로 돌려주고, 호출 순서대로 기록한다", "작업이 실패하면 실패로 기록하고 예외를 그대로 다시 던진다", "bind()로 연결한 실행 기록에는 Tool이 실행되는 즉시 TOOL 단계가 남고, getAndClear()로 연결이 풀린다", "다른 스레드의 기록은 보이지 않는다"와, 필터 테스트의 "요청 처리 중 쌓인 Tool 기록을 요청이 끝나면 비운다"를 확인합니다.
 
 ---
 
@@ -655,7 +661,7 @@ Tool은 평범한 Spring Bean이므로 LLM 없이도 부를 수 있습니다. `M
 
 - 컨트롤러는 LLM이 하던 일, 곧 "Tool 메서드를 인자와 함께 부르기"를 HTTP 파라미터로 대신합니다. Tool 안쪽(`capture()`, `limitPerAirline()`, 전문 Agent)은 LLM이 부를 때와 똑같이 실행됩니다.
 - 응답은 `ApiResponse`(`success`, `message`, `data`)로 감쌉니다.
-- 예외는 `GlobalExceptionHandler`가 받습니다. `IllegalArgumentException`(모르는 공항·항공사)은 HTTP 400, 그 밖의 예외(`ExternalApiException` 포함)는 HTTP 500과 "서버 오류가 발생했습니다: ..." 메시지가 됩니다.
+- 예외는 `GlobalExceptionHandler`가 받습니다. `IllegalArgumentException`(모르는 공항·항공사)은 HTTP 400, 없는 경로(`NoResourceFoundException`, 예: `/api/mcp/airport` 오타)는 HTTP 404와 "요청한 경로를 찾을 수 없습니다: ..." 메시지, 그 밖의 예외(`ExternalApiException` 포함)는 HTTP 500과 "서버 오류가 발생했습니다: ..." 메시지가 됩니다. 모두 같은 `ApiResponse` 형식입니다.
 
 | 경로 | 부르는 Tool | 파라미터 |
 |---|---|---|
@@ -711,12 +717,12 @@ Tool은 평범한 Spring Bean이므로 LLM 없이도 부를 수 있습니다. `M
 - **힌트**: `docs/api-test/README.md`의 서비스 키 설정, 응답의 `response.body.totalCount`와 `items.item` 배열 길이, `ApiClientService.MAX_ROWS`
 - **완료 기준**: 세 경우의 받은 건수와 `totalCount`를 표로 적고, 100일 때 응답의 마지막 항공편 출발 시각과 실제 마지막 운항편을 비교해 어떤 항공편이 빠지는지 한 문장으로 설명할 수 있습니다.
 
-**2. [기본] Tool 설명 다듬기**
+**2. [기본] 가격 조건 요약 검증하기**
 
-`searchFlightsAfterTime`과 `searchFlightsByPriceRange`의 `@Tool` `description`에 빠진 내용(날짜 형식, 항공사별 최대 3편)을 `searchFlightsByAirline`과 같은 수준으로 채우세요.
+`searchFlightsByPriceRange`는 실행 기록에 남길 인자 요약을 `priceRange()`로 만듭니다. 네 경우(최소·최대 모두, 최소만, 최대만, 둘 다 없음)의 요약이 맞게 기록되는지 테스트로 확인하세요.
 
-- **힌트**: `src/main/java/net/java21/flyschedule/mcp/FlightSearchTool.java`의 세 `@Tool`, 5.4절 원칙 2
-- **완료 기준**: `./mvnw test -Dtest=FlightSearchToolTest`가 통과하고, `POST /api/search/tool-calling`에 "내일 김포에서 제주 오후 6시 이후 항공편"을 보냈을 때 LLM 답변이 "항공사별 일부만 보여 준다"는 사실과 어긋나지 않습니다.
+- **힌트**: `FlightSearchTool.priceRange()`, `FlightSearchToolTest`의 `searchFlightsByPriceRange_*` 테스트, 기록은 `ToolResultCapture.getAndClear()`의 `ToolCall.arguments()`로 꺼냅니다.
+- **완료 기준**: `./mvnw test -Dtest=FlightSearchToolTest`가 통과하고, 새 테스트가 `광주 → 제주, 2026-03-25, 30,000~70,000원`, `... 30,000원 이상`, `... 60,000원 이하`, `... 가격 조건 없음` 네 문자열을 검증합니다.
 
 **3. [기본] "항공편 없음" 테스트 추가하기**
 

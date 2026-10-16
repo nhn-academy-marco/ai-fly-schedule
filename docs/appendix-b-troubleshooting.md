@@ -15,7 +15,7 @@
 | `UnsupportedClassVersionError ... class file version 65.0` | Java 21로 빌드한 jar를 더 낮은 버전의 Java로 실행 | `java -version`이 21인지 확인합니다. 서버에서는 `JAVA_BIN`을 지정하거나 `/usr/local/java/java21/bin/java`를 설치합니다 | [10장](./10-choosing-testing-operating.md) |
 | `Web server failed to start. Port 8080 was already in use.` | 이전에 띄운 앱이나 다른 프로그램이 8080을 쓰는 중 | `lsof -i :8080`으로 프로세스를 찾아 종료하거나 `./mvnw spring-boot:run -Dspring-boot.run.arguments=--server.port=8081`로 다른 포트를 씁니다 | [들어가며](./00-introduction.md) |
 | `No qualifying bean of type 'org.springframework.ai.chat.client.ChatClient'` + `expected single matching bean but found 2` | ChatClient 빈이 둘(Ollama, Gemini)인데 이름을 지정하지 않음 | 주입받는 쪽에 `@Qualifier("ollamaChatClient")`처럼 빈 이름을 적거나 `ChatClientProvider`를 씁니다 | [2장](./02-chatclient.md) |
-| Docker 빌드에서 `COPY failed: ... flyschedule-0.0.1-SNAPSHOT.jar: not found` | `pom.xml`의 `<finalName>`이 `fly`라서 jar 이름이 `target/fly.jar`임 | `Dockerfile`의 `COPY` 줄을 `target/fly.jar`로 고칩니다 | [10장](./10-choosing-testing-operating.md) |
+| Docker 빌드에서 `COPY failed: ... target/fly.jar: not found` | jar를 아직 빌드하지 않음(`Dockerfile`은 `target/fly.jar`를 복사) | `./mvnw clean package`로 jar를 만든 뒤 다시 빌드합니다 | [10장](./10-choosing-testing-operating.md) |
 
 ## LLM 연결과 모델
 
@@ -49,6 +49,7 @@
 | 시간·가격 조건을 넣었는데 필터 단계가 trace에 없음 | 정규식이 그 표현을 인식하지 못함(예: "10시 넘어서") | 1단계 detail의 검색 조건을 확인하고 "10시 이후"처럼 씁니다 | [7장](./07-coordinator.md) |
 | Tool Calling Agent가 `success: false`이고 message가 LLM의 질문 | LLM이 Tool을 하나도 부르지 않음 | 출발지·도착지·날짜를 모두 넣어 다시 질문하거나 Gemini로 비교합니다. Tool 설명과 system 프롬프트를 보완합니다 | [8장](./08-tool-calling-agent.md) |
 | TOOL 단계가 "Tool 실행 실패" | LLM이 엉뚱한 인자(없는 공항 등)를 넣었거나 Tool 안에서 `ExternalApiException` 발생 | detail의 실패 메시지를 확인합니다. LLM은 오류를 받고 다른 인자로 다시 시도할 수 있습니다 | [8장](./08-tool-calling-agent.md) |
+| Tool Calling 실행 중 TOOL 단계만 보이고 LLM 단계가 없음 | 정상. TOOL 단계는 Tool이 실행되는 즉시 기록되고, 그 구간을 감싸는 LLM 단계는 `call()`이 끝난 뒤 마지막에 기록됨 | 끝날 때까지 기다립니다. 실패하면 LLM 단계가 "실패: ..."로 남습니다 | [8장](./08-tool-calling-agent.md) |
 | 다른 요청의 Tool 기록이 섞임 | `stream()`이나 다른 스레드에서 Tool이 실행되어 `ThreadLocal`이 비워지지 않음 | `call()`을 쓰고 `ToolResultCaptureCleanupFilter`가 빈으로 등록되어 있는지 확인합니다 | [5장](./05-domain-tools.md) |
 | Advisor 로그에 Tool 호출이 보이지 않음 | 정상. Tool 루프는 ChatModel 안에서 돌아 Advisor에는 최종 응답만 보임 | Tool 호출은 trace의 TOOL 단계로 확인합니다 | [3장](./03-advisor.md) |
 | "검색 계획을 세우지 못했습니다..." | 작은 모델이 JSON 형식을 지키지 못해 `entity()` 결과가 비어 있음 | Gemini를 쓰거나 문장에 출발지·도착지를 분명히 넣습니다 | [9장](./09-orchestrator-workers.md) |
@@ -65,6 +66,7 @@
 | GitHub Actions의 `Check secrets` 단계가 실패하며 "GitHub Secrets에 DATA_GO_KR_SERVICE_KEY가 없습니다." | 저장소 Secrets에 서비스 키가 없음 | Settings > Secrets and variables > Actions에 `DATA_GO_KR_SERVICE_KEY`를 등록합니다 | [10장](./10-choosing-testing-operating.md) |
 | `run-script` 단계가 "[startup] 기동 실패. 최근 로그:"로 끝남 | 90초 안에 `http://localhost:{포트}/`가 응답하지 않음(설정 오류, 포트 충돌, Java 버전) | 함께 출력된 로그 50줄과 `~/fly-schedule/app.log`를 확인합니다 | [10장](./10-choosing-testing-operating.md) |
 | 배포된 사이트에서 Gemini만 "키가 설정되지 않았습니다" | 서버의 `~/fly-schedule/.env`에 `GOOGLE_GENAI_API_KEY`가 없음 | `.env`에 키를 적고 다시 배포하거나 `startup.sh`를 다시 실행합니다 | [10장](./10-choosing-testing-operating.md) |
+| `/api/...` 요청이 `404`와 "요청한 경로를 찾을 수 없습니다: ..." | 경로 오타(예: `/api/mcp/airport`) 또는 HTTP 메서드가 다름 | `GlobalExceptionHandler`가 없는 경로를 `ApiResponse` 형식의 404로 돌려준 것입니다. 메시지의 경로를 [5장](./05-domain-tools.md)·[10장](./10-choosing-testing-operating.md)의 표와 비교합니다 | [5장](./05-domain-tools.md) |
 | 서버를 재시작한 뒤 조회하던 작업이 `404` | 작업은 메모리에만 있음. 끝난 작업도 10분 뒤 지워짐 | 화면에서 다시 검색합니다 | [10장](./10-choosing-testing-operating.md) |
 | "실행 중인 검색이 너무 많습니다. 잠시 후 다시 시도하세요." | 보관 중인 작업이 `MAX_JOBS`(200)개에 도달 | 잠시 기다리면 끝난 작업이 정리됩니다 | [10장](./10-choosing-testing-operating.md) |
 

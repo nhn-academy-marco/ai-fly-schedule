@@ -127,7 +127,7 @@ sequenceDiagram
 
 > **생각해 보기**: Tool Calling Agent에서는 LLM이 Tool을 고릅니다. 그런데 그 선택이 Advisor에 보이지 않는다면, 세 패턴을 비교할 때 "LLM이 무엇을 결정했는가"를 무엇으로 보여 줄 수 있을까요?
 
-이 프로젝트의 답은 Tool 쪽에서 기록하는 것입니다. 모든 Tool 메서드는 `ToolResultCapture.capture(...)`로 이름, 인자, 결과, 시작·종료 시각을 남기고, 서비스는 `call()`이 끝난 뒤 그 기록을 꺼내 실행 기록의 TOOL 단계로 바꿉니다. `ToolResultCapture`는 [5장](05-domain-tools.md)에서, TOOL 단계 기록은 [8장](08-tool-calling-agent.md)에서 읽습니다.
+이 프로젝트의 답은 Tool 쪽에서 기록하는 것입니다. 모든 Tool 메서드는 `ToolResultCapture.capture(...)`로 이름, 인자, 결과, 시작·종료 시각을 남기고, 서비스가 `call()` 전에 실행 기록을 연결해 두면(`bind`) Tool이 실행되는 즉시 그 기록이 실행 기록의 TOOL 단계로 남습니다. `ToolResultCapture`는 [5장](05-domain-tools.md)에서, TOOL 단계 기록은 [8장](08-tool-calling-agent.md)에서 읽습니다.
 
 > **팁**: `ToolCallAdvisor`를 등록하면 Tool 루프가 `ChatModel` 대신 Advisor 체인에서 돌아, 왕복마다 안쪽 Advisor가 다시 실행됩니다. 이 프로젝트는 기본 방식을 그대로 두었습니다. Tool의 실제 실행 구간과 실패 여부를 가장 정확히 아는 곳은 Tool 메서드이고, LLM 없이 Tool을 직접 부르는 경로(`/api/mcp/**`, 단위 테스트)에서도 같은 기록이 동작하기 때문입니다. 연습 문제 4에서 직접 비교해 봅니다.
 

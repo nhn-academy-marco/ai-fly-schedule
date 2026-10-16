@@ -132,7 +132,7 @@ SearchPlan validate(SearchPlan plan) {
 |---|---|
 | `plan == null` | 작은 모델이 JSON 형식을 깨뜨려 계획 자체가 없음 |
 | `hasRoute()` | 출발지나 도착지를 `null`로 둠 |
-| `isValidAirport()` | "서울", "도쿄"처럼 국내선 공항이 아닌 이름([6장](06-specialized-agents.md)의 `AirportCodeAgent`) |
+| `isValidAirport()` | "서울", "도쿄"처럼 국내선 공항이 아닌 이름([6장](06-specialized-agents.md)의 `AirportCodeAgent`). `getAirportCode()`처럼 `NAARKJJ` 같은 공항 코드는 통과시킵니다 |
 | 출발 ≠ 도착(공항 코드로) | "제주 → 제주", "김해 → 부산"(같은 공항) |
 | 중복 제거(공항 코드로) | 같은 작업을 두 번, 또는 "광주 → 제주"와 "광주공항 → 제주국제공항"처럼 이름만 다른 같은 작업 |
 | `limit(MAX_TASKS)` | 프롬프트의 "최대 4개"를 무시하고 10개를 만들어 API 호출이 폭주 |
@@ -287,7 +287,7 @@ private static String threadName() {
 
 `startMs`는 거의 같고 `thread`는 모두 다릅니다. `order`는 **기록된 순서**라서 먼저 끝난 Worker가 앞 번호를 받습니다. `trace.run()`은 작업이 끝난 뒤 기록하므로, Worker 안의 CODE 단계가 해당 WORKER 단계보다 먼저 번호를 받는다는 점도 눈여겨보세요.
 
-화면은 작업(job) API를 1.5초 간격으로 조회하므로, 계획 LLM 단계가 먼저 나타나고 Worker 단계가 하나씩 늘어나는 모습을 실행 중에 볼 수 있습니다. 8장의 Tool Calling 패턴이 마지막에 한꺼번에 나타났던 것과 다릅니다.
+화면은 작업(job) API를 1.5초 간격으로 조회하므로, 계획 LLM 단계가 먼저 나타나고 Worker 단계가 하나씩 늘어나는 모습을 실행 중에 볼 수 있습니다. 8장의 Tool Calling 패턴은 TOOL 단계가 실행 즉시 나타나지만, 그 바깥을 감싸는 LLM 단계는 `call()`이 끝난 뒤 마지막에 붙습니다. 이 장의 Orchestrator는 계획 LLM 단계가 끝나자마자 기록되므로 순서가 반대입니다.
 
 > **주의**
 > Java 21에서는 가상 스레드가 `synchronized` 블록 안에 있는 동안 OS 스레드에 고정(pinning)됩니다. `ExecutionTrace.add()`는 목록에 한 줄 추가하는 짧은 구간이라 문제가 없지만, `synchronized` 안에서 I/O를 하면 병렬성이 떨어집니다.

@@ -92,7 +92,7 @@ Spring AI는 모듈이 많습니다. 모듈마다 버전을 따로 적으면 서
             <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
-                <version>1.1.4</version>
+                <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -117,9 +117,8 @@ Spring AI는 모듈이 많습니다. 모듈마다 버전을 따로 적으면 서
 
 **코드 읽기**
 
-- `spring-ai-bom`을 `import` 범위로 넣으면 Spring AI 모듈 전체가 1.1.4로 맞춰집니다. 부모인 `spring-boot-starter-parent`(3.5.11)가 Spring Boot 모듈의 버전을 맞추는 것과 같은 원리입니다.
+- `spring-ai-bom`을 `import` 범위로 넣으면 Spring AI 모듈 전체가 1.1.4로 맞춰집니다. BOM의 버전은 `<properties>`의 `<spring-ai.version>`을 `${spring-ai.version}`으로 참조하므로, 버전을 바꿀 때는 속성 한 곳만 고치면 됩니다. 부모인 `spring-boot-starter-parent`(3.5.11)가 Spring Boot 모듈의 버전을 맞추는 것과 같은 원리입니다.
 - 스타터를 넣기만 하면 자동 설정이 `ChatModel` 빈을 만듭니다. Ollama 스타터는 `ollamaChatModel`, Google GenAI 스타터는 `googleGenAiChatModel`이라는 이름의 빈을 만듭니다. 이 이름은 2장에서 `@Qualifier`로 씁니다.
-- `<spring-ai.version>` 속성은 지금 어디에서도 참조하지 않습니다. BOM의 `<version>`을 `${spring-ai.version}`으로 바꾸면 버전을 한 곳에서 관리할 수 있습니다(연습 문제에서 다룹니다).
 
 > **직접 확인하기**
 > ```bash
@@ -334,12 +333,12 @@ IntelliJ IDEA에서 실행한다면 Run > Edit Configurations의 Environment var
 - **힌트**: `src/main/resources/application.yml`의 `spring.ai.ollama.base-url`. 먼저 `curl http://localhost:11434/api/tags`로 모델이 보이는지 확인합니다.
 - **완료 기준**: `{"message": "flights from Gwangju to Jeju tomorrow", "model": "ollama"}`를 `POST /api/search/coordinator`로 보냈을 때 응답의 `trace[0].kind`가 `LLM`이고 `success`가 `true`입니다.
 
-**2. [기본] BOM 버전을 속성으로 관리하기**
+**2. [기본] BOM이 버전을 정하는지 확인하기**
 
-`pom.xml`의 `spring-ai-bom` 버전을 `<spring-ai.version>` 속성으로 참조하도록 바꿉니다.
+`pom.xml`의 스타터에는 버전이 없습니다. 실제로 어떤 버전이 들어오는지, 그 버전을 누가 정하는지 확인합니다.
 
-- **힌트**: `pom.xml`의 `<properties>`와 `<dependencyManagement>`.
-- **완료 기준**: `<version>${spring-ai.version}</version>`으로 바꾼 뒤 `./mvnw dependency:tree | grep spring-ai-starter`의 결과가 바꾸기 전과 같고, `./mvnw test`가 `BUILD SUCCESS`로 끝납니다.
+- **힌트**: `pom.xml`의 `<spring-ai.version>` 속성과 `<dependencyManagement>`의 `${spring-ai.version}`. `./mvnw dependency:tree | grep spring-ai`로 들어온 모듈과 버전을 봅니다.
+- **완료 기준**: 출력된 Spring AI 모듈이 모두 `1.1.4`인 것을 확인하고, `-Dspring-ai.version=...`처럼 속성만 바꿔 실행하면 모든 모듈의 버전이 함께 바뀌는 이유를 한 문장으로 설명합니다(실험한 뒤에는 원래대로 둡니다).
 
 **3. [도전] 재시도 설정의 효과 재기**
 

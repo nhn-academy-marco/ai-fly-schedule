@@ -210,7 +210,8 @@ Structured Output은 "JSON 모양"을 맞춰 줄 뿐 "내용이 맞는지"는 �
             try {
                 extraction = criteriaExtractor.extract(message, () -> chatClientProvider.get(model));
             } catch (RuntimeException e) {
-                trace.record(Kind.CODE, "SearchCriteriaExtractor", "검색 조건 추출", "실패: " + e.getMessage(), start);
+                // 정규식은 실패해도 예외를 던지지 않으므로, 여기로 오는 실패는 LLM 추출 단계에서 난 것이다
+                trace.record(Kind.LLM, "SearchCriteriaExtractor", "LLM으로 검색 조건 추출", "실패: " + e.getMessage(), start);
                 throw e;
             }
             trace.record(extraction.usedLlm() ? Kind.LLM : Kind.CODE, "SearchCriteriaExtractor",
@@ -237,6 +238,7 @@ Structured Output은 "JSON 모양"을 맞춰 줄 뿐 "내용이 맞는지"는 �
 
 - `() -> chatClientProvider.get(model)`이 앞에서 본 `Supplier`입니다. 모델 선택("ollama" 또는 "gemini")은 LLM이 정말 필요할 때 확인됩니다.
 - 1단계는 끝난 뒤에야 LLM을 썼는지 알 수 있으므로, 시작 시각 `start`를 미리 재 두고 `trace.record(..., start)`로 나중에 기록합니다.
+- 추출이 예외로 끝났다면 LLM 경로에서 실패한 것입니다. 정규식 경로는 조건을 못 찾아도 예외 없이 LLM으로 넘기기 때문입니다. 그래서 실패 단계는 `Kind.LLM`, 제목 "LLM으로 검색 조건 추출", `detail` "실패: ..."로 남습니다. 화면에서는 실패한 1단계가 보라색으로 보입니다.
 - 예외는 HTTP 500이 되지 않고 `success: false` 응답이 됩니다. `IllegalArgumentException`은 사용자가 고칠 수 있는 입력 문제이므로 메시지를 그대로 보여 줍니다. 그 밖의 예외(Ollama 연결 실패, 공공데이터 포털 오류인 `ExternalApiException` 등)는 `ChatClientProvider.describeError()`가 안내 문장으로 바꿉니다.
 - 실패해도 그때까지의 실행 기록이 응답에 담깁니다. 어느 단계에서 멈췄는지 화면에서 보입니다.
 
@@ -351,17 +353,18 @@ public record TraceStep(
 ```javascript
     function renderTrace(trace, totalMs) {
         const total = Math.max(totalMs || 0, ...trace.map(s => s.startMs + s.durationMs), 1);
-        return `<div class="trace">${trace.map(step => {
+        const scale = `<div class="timeline-scale"><span>0</span><span>${seconds(Math.round(total / 2))}</span><span>${seconds(total)}</span></div>`;
+        return scale + `<div class="trace">${trace.map(step => {
             const left = (step.startMs / total) * 100;
-            const width = Math.max((step.durationMs / total) * 100, 0.6);
+            const width = Math.max((step.durationMs / total) * 100, 0.8);
             return `<div class="trace-row k-${esc(step.kind)}">
 ```
 
-`k-CODE` 클래스는 회색(`#5b6472`), `k-LLM`은 보라색, `k-TOOL`은 주황색, `k-WORKER`는 초록색입니다. 이 책의 Mermaid 그림과 같은 색입니다. 패널 위쪽에는 "LLM 0회 · Tool 0회 · Worker 0개 · 코드 단계 8개"처럼 종류별 개수가 나옵니다.
+`k-CODE` 클래스는 회색(`#5b6472`), `k-LLM`은 보라색, `k-TOOL`은 주황색, `k-WORKER`는 초록색입니다. 이 책의 Mermaid 그림과 같은 색이고, 검색 상자 아래의 색 범례에도 같은 색이 나옵니다. 타임라인 위에는 0초·중간·끝 시각을 적은 눈금(`timeline-scale`)이 있어 막대 길이를 초 단위로 읽을 수 있습니다. 패널 위쪽에는 상태 배지(실행 중·완료·실패)와 숫자 칸 네 개(전체 시간, LLM 호출, Tool 호출, Worker)가 있습니다.
 
 > **직접 확인하기**
 > 애플리케이션을 실행하고(`./mvnw spring-boot:run`) 브라우저에서 `http://localhost:8080/`을 엽니다. Coordinator 패턴만 선택하고 "내일 광주에서 제주 오전 10시 이후 8만원 이하"를 검색합니다.
-> 기대 결과: 실행 기록 여덟 줄이 모두 회색이고, 5번 줄(`ApiClientService`)의 막대만 길게 보입니다. "LLM 0회"로 표시됩니다. 이어서 "다음 주 금요일 광주에서 제주"를 검색하면 1번 줄만 보라색으로 바뀌고 그 막대가 가장 깁니다.
+> 기대 결과: 실행 기록 여덟 줄이 모두 회색이고, 5번 줄(`ApiClientService`)의 막대만 길게 보입니다. 숫자 칸의 "LLM 호출"이 "0회"입니다. 이어서 "다음 주 금요일 광주에서 제주"를 검색하면 1번 줄만 보라색으로 바뀌고 그 막대가 가장 깁니다.
 
 ## 응답 — SearchResponse와 TaskResult
 

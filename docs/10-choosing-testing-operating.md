@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 다음 단계를 누가 정하나 | 코드 (순서 고정) | LLM (어떤 Tool을 언제 부를지) | LLM이 나누고 종합, 실행은 코드(Worker) |
 | 한 요청의 LLM 호출 | 0회(정규식 경로) 또는 1회(LLM fallback) | `call()` 최소 1회. 내부에서 Tool 결과를 받아 다시 생성하므로 모델 왕복은 2회 이상 | 계획 1회 + 종합 1회 (종합이 실패하면 코드 요약) |
-| 지연 (실측 감각) | 정규식 경로 약 0.6초, 대부분 공공데이터 포털 API 대기 | 모델 왕복 수에 비례. 원격 3B 모델은 왕복 한 번에 수십 초 | LLM 2회 + 가장 느린 Worker 1개 (Worker는 병렬) |
+| 지연 (실측 감각) | 정규식 경로 약 0.6초, 대부분 공공데이터 포털 API 대기 | 모델 왕복 수에 비례. 원격 3B 모델은 왕복 한 번에 수십 초(실측 약 99초, [8장](./08-tool-calling-agent.md)) | LLM 2회 + 가장 느린 Worker 1개 (Worker는 병렬) |
 | 같은 입력에 같은 결과 | 정규식 경로는 항상 같음 | 모델이 고른 Tool·인자에 따라 달라질 수 있음 | 작업 수와 분해 방식이 달라질 수 있음 |
 | 잘 맞는 요청 | "내일 광주에서 제주"처럼 형태가 정해진 요청 | 필요한 정보가 요청마다 다른 대화형 요청 | "금요일이나 토요일에 김포나 광주에서 제주"처럼 독립된 조합으로 나뉘는 요청 |
 | 약점 | 복합 조건을 처리하지 못함 | Tool을 안 부르거나 엉뚱한 인자를 넣음 | 계획 JSON이 깨지거나 없는 공항을 계획에 넣음 |
@@ -144,16 +144,16 @@ Tool Calling Agent는 더 까다롭습니다. 실제로는 `call().content()` �
         assertThat(response.pattern()).isEqualTo("tool-calling");
         assertThat(response.message()).contains("7C1402");
         assertThat(response.trace()).extracting(TraceStep::kind)
-                .containsExactly(Kind.LLM, Kind.TOOL, Kind.TOOL);
+                .containsExactly(Kind.TOOL, Kind.TOOL, Kind.LLM);
 ```
 
 코드 읽기
 
 - `RETURNS_SELF`는 `system(...)`, `user(...)`, `tools(...)`처럼 자기 자신을 돌려주는 빌더 메서드를 한 번에 처리합니다. 그래서 `requestSpec` 하나로 체인이 끝까지 이어집니다.
-- `thenAnswer` 안에서 진짜 Tool 객체(`airportInfoTool`, `flightSearchTool`)의 메서드를 부릅니다. Tool 안의 `ToolResultCapture`가 진짜로 동작하므로, trace에 TOOL 단계가 기록되는지 확인할 수 있습니다.
+- `thenAnswer` 안에서 진짜 Tool 객체(`airportInfoTool`, `flightSearchTool`)의 메서드를 부릅니다. Tool 안의 `ToolResultCapture`가 진짜로 동작하므로, trace에 TOOL 단계가 실행 순서대로 먼저 기록되고 LLM 단계가 마지막에 붙는지 확인할 수 있습니다.
 - Tool 아래의 `FlightSearchAgent`만 mock입니다. 즉 "LLM의 결정"과 "외부 API"만 가짜이고 그 사이의 코드는 모두 진짜입니다.
 
-같은 파일에는 실패 사례도 모여 있습니다. `noToolCall()`은 LLM이 Tool을 하나도 부르지 않고 되묻는 경우, `failedToolIsRecorded()`는 LLM이 "서울"이라는 없는 공항을 넣었다가 "김포"로 다시 시도하는 경우, `llmFailure()`는 Tool 실행 도중 LLM 연결이 끊긴 경우입니다. 진짜 모델로는 일부러 일으키기 어려운 상황을 가짜 LLM은 몇 줄로 재현합니다.
+같은 파일에는 실패 사례도 모여 있습니다. `noToolCall()`은 LLM이 Tool을 하나도 부르지 않고 되묻는 경우, `failedToolIsRecorded()`는 LLM이 "서울"이라는 없는 공항을 넣었다가 "김포"로 다시 시도하는 경우, `llmFailure()`는 Tool 실행 뒤 LLM 연결이 끊긴 경우(TOOL 단계는 남고 LLM 단계가 "실패: ..."로 기록됨)입니다. 진짜 모델로는 일부러 일으키기 어려운 상황을 가짜 LLM은 몇 줄로 재현합니다.
 
 ### 기법 3: 병렬성 검증하기
 
@@ -287,6 +287,19 @@ LLM만 가짜로 바꾸는 것이 아닙니다. 공공데이터 포털도 테스
 
 문제는 표의 마지막 줄입니다. 데모 서버는 nginx 뒤에 있고, nginx는 기본값으로 60초 안에 응답이 오지 않으면 연결을 끊고 HTML 오류 페이지(504)를 돌려줍니다. 화면은 그 HTML을 JSON으로 읽으려다 실패했습니다.
 
+실제 숫자로 보면 더 분명합니다. 데모 사이트에서 Ollama `qwen2.5:3b`로 Tool Calling 검색을 한 번 실행한 실행 기록입니다(필드 일부).
+
+```json
+[
+  {"kind": "TOOL", "actor": "searchFlightsByAirline", "title": "LLM이 요청한 Tool 실행",
+   "detail": "광주 → 제주, 2026-10-17 → 5개 항공사, 14편", "startMs": 36400, "durationMs": 84},
+  {"kind": "LLM", "actor": "ollama", "title": "Tool 선택과 답변 작성",
+   "detail": "Tool 1회 호출 후 답변", "startMs": 0, "durationMs": 99362}
+]
+```
+
+`startMs`는 약 36.4초를 반올림한 값입니다. Tool은 0.1초도 걸리지 않았지만 LLM 구간은 약 99.4초입니다. 동기 API였다면 60초에서 끊겼을 요청입니다.
+
 ```mermaid
 sequenceDiagram
     participant B as 화면(브라우저)
@@ -337,7 +350,7 @@ sequenceDiagram
     C-->>B: DONE, result
 ```
 
-그림 읽기: 어느 요청도 몇 밀리초 안에 끝나므로 nginx의 60초 제한에 걸리지 않습니다. 덤으로 화면이 1.5초마다 trace를 다시 그리므로, 실행 기록이 한 단계씩 쌓이는 모습을 실시간으로 볼 수 있습니다.
+그림 읽기: 어느 요청도 몇 밀리초 안에 끝나므로 nginx의 60초 제한에 걸리지 않습니다. 덤으로 화면이 1.5초마다 trace를 다시 그리므로, 실행 기록이 한 단계씩 쌓이는 모습을 실시간으로 볼 수 있습니다. Tool Calling 패턴도 TOOL 단계가 Tool 실행 즉시 기록되므로(`ToolResultCapture.bind`, 8장), 위 예라면 약 36초에 TOOL 단계가 먼저 나타나고 약 99초에 LLM 단계가 붙습니다.
 
 핵심 코드는 `SearchJobService.start()`입니다.
 
@@ -515,7 +528,7 @@ server {
 > `proxy_pass`의 포트는 `startup.sh`가 고른 포트와 같아야 합니다. 다르면 502 Bad Gateway가 납니다. 설정을 바꾼 뒤에는 `sudo nginx -t`로 문법을 확인하고 `sudo systemctl reload nginx`로 반영합니다.
 
 > **팁**
-> 저장소에는 `Dockerfile`과 `docker-compose.yml`도 있지만 데모 사이트의 배포는 위의 `startup.sh` 방식입니다. `Dockerfile`은 `target/flyschedule-0.0.1-SNAPSHOT.jar`를 복사하는데, `pom.xml`의 `<finalName>`이 `fly`이므로 실제 jar 이름은 `target/fly.jar`입니다. Docker로 실행해 보려면 `COPY` 줄의 파일 이름부터 맞춰야 합니다.
+> 저장소에는 `Dockerfile`과 `docker-compose.yml`도 있지만 데모 사이트의 배포는 위의 `startup.sh` 방식입니다. `pom.xml`의 `<finalName>`이 `fly`이므로 빌드한 jar는 `target/fly.jar`이고, `Dockerfile`도 이 파일을 복사합니다(`COPY target/fly.jar app.jar`). Docker로 실행하려면 먼저 `./mvnw clean package`로 jar를 만듭니다.
 
 ## 10.5 더 나아가기 — MCP 서버, A2A, Evaluator-Optimizer
 
@@ -557,7 +570,7 @@ Worker를 별도 서비스로 떼어 내면 Worker만 따로 늘리거나 다른
 2. **[기본] 가격 Tool을 부른 경우 재현하기**
    `ToolCallingSearchServiceTest`에 "LLM이 `searchFlightsByPriceRange`를 불렀다"는 상황을 만들고, trace의 TOOL 단계 actor가 `searchFlightsByPriceRange`인지 검증합니다.
    - **힌트**: `llmCallsToolsThenAnswers(...)`, `FlightSearchTool.searchFlightsByPriceRange(...)`의 파라미터. Tool 아래에서 부르는 `FlightSearchAgent` 메서드를 `when(...)`으로 정해 둡니다.
-   - **완료 기준**: `./mvnw test -Dtest=ToolCallingSearchServiceTest` 통과, trace의 kind가 `LLM, TOOL` 순서입니다.
+   - **완료 기준**: `./mvnw test -Dtest=ToolCallingSearchServiceTest` 통과, trace의 kind가 `TOOL, LLM` 순서이고 TOOL 단계의 `detail`에 가격 조건 요약(예: `60,000원 이하`)이 들어 있습니다.
 
 3. **[도전] 코드로 만든 평가자 붙이기**
    Orchestrator-Workers 패턴의 종합 답변에 나온 편명(예: `7C1402`)이 모두 `results` 안에 있는지 검사하는 메서드를 만들고, 없는 편명이 있으면 `ResultSynthesizer.fallbackSummary(...)`의 요약으로 바꿉니다.

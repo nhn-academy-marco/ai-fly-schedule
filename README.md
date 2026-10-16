@@ -9,7 +9,7 @@ Spring AI 1.1.4로 LLM 애플리케이션의 대표적인 세 가지 구조를 �
 
 ## 무엇을 볼 수 있나
 
-- 한 문장을 입력하고 "세 패턴 모두 실행"으로 결과를 비교합니다.
+- 한 문장을 입력하고 **실행하기**로 세 패턴의 결과를 나란히 비교합니다. `/?q=문장&model=ollama&patterns=coordinator,orchestrator&run=1`처럼 주소에 조건을 붙이면 채워진 채로 바로 실행됩니다.
 - 단계마다 CODE, LLM, TOOL, WORKER로 구분한 실행 기록 타임라인이 실시간으로 쌓입니다.
 - Orchestrator-Workers 패턴에서는 Worker가 가상 스레드로 병렬 실행되는 모습을 볼 수 있습니다.
 - LLM은 Ollama(`qwen2.5:3b-instruct-q4_K_M`)와 Gemini(`gemini-2.5-flash`) 중에서 고릅니다.

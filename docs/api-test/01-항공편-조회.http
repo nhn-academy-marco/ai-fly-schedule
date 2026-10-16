@@ -44,13 +44,13 @@ Accept: application/json
 ###
 
 ### 항공편 조회 (GET) - 울산 → 제주
-GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKNU&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKPU&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
 Accept: application/json
 
 ###
 
 ### 항공편 조회 (GET) - 무안 → 제주
-GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKJJ&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
+GET {{baseUrl}}/GetFlightOpratInfoList?serviceKey={{serviceKey}}&pageNo=1&numOfRows=10&_type=json&depAirportId=NAARKJB&arrAirportId=NAARKPC&depPlandTime={{depPlandTime}}
 Accept: application/json
 
 ###

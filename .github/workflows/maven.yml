@@ -21,8 +21,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      # 배포 관련 단계는 main에 push했을 때만 실행한다 (PR은 빌드만 확인)
       # 서비스 키가 없으면 배포된 앱의 모든 검색이 실패하므로, 빌드·배포 전에 멈춘다
       - name: Check secrets
+        if: github.event_name == 'push'
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         run: |
@@ -47,6 +49,7 @@ jobs:
       #    - uses: actions/checkout@v4
       # 저장소의 deploy/startup.sh로 처음 교체하기 전에, 서버에 있던 원래 스크립트를 한 번만 백업한다
       - name: backup original startup.sh
+        if: github.event_name == 'push'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_IP }}
@@ -60,6 +63,7 @@ jobs:
             fi
 
       - name: upload startup.sh
+        if: github.event_name == 'push'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_IP }}
@@ -72,6 +76,7 @@ jobs:
           rm: false
 
       - name: upload file
+        if: github.event_name == 'push'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_IP }}
@@ -83,6 +88,7 @@ jobs:
           rm: false
 
       - name: run-script
+        if: github.event_name == 'push'
         uses: appleboy/ssh-action@v1.2.0
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}

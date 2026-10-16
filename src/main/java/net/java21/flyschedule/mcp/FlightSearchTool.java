@@ -44,7 +44,7 @@ public class FlightSearchTool {
     @Tool(
             description = "항공편을 검색하여 항공사별로 그룹핑하여 반환합니다. " +
                     "출발 공항, 도착 공항, 날짜를 받아 항공사별로 정리된 항공편 목록을 제공합니다. " +
-                    "날짜는 '2026-03-25' 형식을 권장하며 '내일', '모레'도 지원합니다. " +
+                    "날짜는 '2026-03-25'(YYYY-MM-DD) 형식으로 전달합니다. " +
                     "항공사별 최대 3편만 반환합니다."
     )
     public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(

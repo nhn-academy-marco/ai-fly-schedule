@@ -75,7 +75,7 @@ public class ToolCallingSearchService {
             return SearchResponse.success(PATTERN, text, result == null ? List.of() : List.of(result), trace);
 
         } catch (IllegalArgumentException e) {
-            ToolResultCapture.getAndClear();
+            recordToolCalls(ToolResultCapture.getAndClear(), trace);
             return SearchResponse.fail(PATTERN, e.getMessage(), trace);
         } catch (Exception e) {
             log.error("Tool Calling 검색 실패 (model={})", model, e);

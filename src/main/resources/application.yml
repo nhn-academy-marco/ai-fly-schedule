@@ -38,10 +38,11 @@ spring.ai.ollama:
     options:
       model: qwen2.5:3b-instruct-q4_K_M
       temperature: 0.0
-      max-tokens: 1024
-      num-thread: 4
-      # Tool 7개의 설명과 Tool 결과가 들어가도록 컨텍스트를 늘린다
+      # CPU에서는 출력 토큰 하나하나가 느리다. 답변·계획(JSON)이 들어갈 만큼만 허용한다
+      max-tokens: 512
+      # Tool 설명과 Tool 결과가 들어가도록 컨텍스트를 늘린다
       num-ctx: 4096
+      # num-thread는 지정하지 않는다. Ollama가 서버의 CPU 코어 수에 맞춰 정한다
       top-p: 0.9
       top-k: 40
       keep-alive: 10m
@@ -54,10 +55,13 @@ spring.ai.google:
     api-key: ${GOOGLE_GENAI_API_KEY:not-set}
     chat:
       options:
-        model: gemini-2.5-flash
-        temperature: 0.0
+        # 무료 등급에서 쓸 수 있는 3.5 계열의 가장 빠른 모델. Function Calling과 Structured Output을 지원한다
+        # (2.5 계열은 새 프로젝트에서 쓸 수 없을 수 있다 - Google은 새 프로젝트에 3.5 Flash-Lite를 권장)
+        model: gemini-3.5-flash-lite
+        # 응답 속도 우선: Tool 선택·짧은 요약에는 긴 추론이 필요 없다
+        thinking-level: minimal
+        # temperature는 지정하지 않는다. Google은 Gemini 3 계열에서 기본값 1.0을 강하게 권장한다
+        # (1.0 미만이면 반복 출력 같은 예상치 못한 동작이 생길 수 있음). 결과 검증은 코드가 맡는다
         # 계획(JSON)과 추천 답변이 잘리지 않도록 넉넉하게 둔다
         max-output-tokens: 1024
-        top-p: 0.9
-        top-k: 40
 

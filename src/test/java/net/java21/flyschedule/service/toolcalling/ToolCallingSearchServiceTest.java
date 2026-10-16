@@ -53,7 +53,6 @@ class ToolCallingSearchServiceTest {
         airportListAgent = mock(AirportListAgent.class);
         flightSearchTool = new FlightSearchTool(flightSearchAgent);
         airportInfoTool = new AirportInfoTool(airportListAgent);
-        AirlineInfoTool airlineInfoTool = new AirlineInfoTool(mock(AirlineListAgent.class));
 
         ChatClient chatClient = mock(ChatClient.class);
         requestSpec = mock(ChatClient.ChatClientRequestSpec.class, RETURNS_SELF);
@@ -64,7 +63,7 @@ class ToolCallingSearchServiceTest {
         ChatClientProvider provider = mock(ChatClientProvider.class);
         when(provider.get(anyString())).thenReturn(chatClient);
 
-        service = new ToolCallingSearchService(provider, flightSearchTool, airportInfoTool, airlineInfoTool);
+        service = new ToolCallingSearchService(provider, flightSearchTool);
     }
 
     @AfterEach
@@ -111,7 +110,7 @@ class ToolCallingSearchServiceTest {
     }
 
     @Test
-    @DisplayName("Tool은 요청마다 전달하고, 시스템 프롬프트에 오늘 날짜를 넣는다")
+    @DisplayName("항공편 검색 Tool만 요청마다 전달하고, 시스템 프롬프트에 오늘 날짜를 넣는다")
     void passesToolsPerRequest() {
         llmCallsToolsThenAnswers(() -> {
             flightSearchTool.searchFlightsByAirline("광주", "제주", "내일");
@@ -121,7 +120,8 @@ class ToolCallingSearchServiceTest {
 
         service.search("내일 광주에서 제주", "ollama");
 
-        verify(requestSpec).tools(any(), any(), any());
+        // 항공편 검색 Tool만 넘긴다 (공항·항공사 조회 Tool은 넘기지 않아 LLM이 읽을 Tool 설명을 줄인다)
+        verify(requestSpec).tools(flightSearchTool);
         verify(requestSpec).system(org.mockito.ArgumentMatchers.contains(java.time.LocalDate.now().toString()));
     }
 

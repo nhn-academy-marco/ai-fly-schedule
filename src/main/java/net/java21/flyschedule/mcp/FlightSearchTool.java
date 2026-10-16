@@ -45,7 +45,8 @@ public class FlightSearchTool {
             description = "항공편을 검색하여 항공사별로 그룹핑하여 반환합니다. " +
                     "출발 공항, 도착 공항, 날짜를 받아 항공사별로 정리된 항공편 목록을 제공합니다. " +
                     "날짜는 '2026-03-25'(YYYY-MM-DD) 형식으로 전달합니다. " +
-                    "항공사별 최대 3편만 반환합니다."
+                    "항공사별 최대 3편만 반환합니다.",
+            resultConverter = CompactFlightResultConverter.class
     )
     public Map<String, List<FlightInfoResponse>> searchFlightsByAirline(
             @ToolParam(description = "출발 공항 이름 (예: 광주, 김포, 제주)") String departure,
@@ -78,7 +79,8 @@ public class FlightSearchTool {
     @Tool(
             description = "특정 시간 이후 출발하는 항공편을 검색하여 항공사별로 그룹핑합니다. " +
                     "시간 조건을 만족하는 항공편만 필터링하여 제공합니다. " +
-                    "시간 형식은 '14:00', '오후 2시' 등을 지원합니다. 날짜는 YYYY-MM-DD 형식이며, 항공사별 최대 3편만 반환합니다."
+                    "시간 형식은 '14:00', '오후 2시' 등을 지원합니다. 날짜는 YYYY-MM-DD 형식이며, 항공사별 최대 3편만 반환합니다.",
+            resultConverter = CompactFlightResultConverter.class
     )
     public Map<String, List<FlightInfoResponse>> searchFlightsAfterTime(
             @ToolParam(description = "출발 공항 이름 (예: 광주, 김포, 제주)") String departure,
@@ -113,7 +115,8 @@ public class FlightSearchTool {
     @Tool(
             description = "특정 가격 범위 내의 항공편을 검색하여 항공사별로 그룹핑합니다. " +
                     "예산에 맞는 항공편만 필터링하여 제공합니다. " +
-                    "최소 가격과 최대 가격은 선택 사항입니다. 날짜는 YYYY-MM-DD 형식이며, 항공사별 최대 3편만 반환합니다."
+                    "최소 가격과 최대 가격은 선택 사항입니다. 날짜는 YYYY-MM-DD 형식이며, 항공사별 최대 3편만 반환합니다.",
+            resultConverter = CompactFlightResultConverter.class
     )
     public Map<String, List<FlightInfoResponse>> searchFlightsByPriceRange(
             @ToolParam(description = "출발 공항 이름 (예: 광주, 김포, 제주)") String departure,

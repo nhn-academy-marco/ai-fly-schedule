@@ -8,8 +8,6 @@ import net.java21.flyschedule.dto.search.ExecutionTrace;
 import net.java21.flyschedule.dto.search.SearchResponse;
 import net.java21.flyschedule.dto.search.TaskResult;
 import net.java21.flyschedule.dto.search.TraceStep.Kind;
-import net.java21.flyschedule.mcp.AirlineInfoTool;
-import net.java21.flyschedule.mcp.AirportInfoTool;
 import net.java21.flyschedule.mcp.FlightSearchTool;
 import net.java21.flyschedule.mcp.ToolResultCapture;
 import net.java21.flyschedule.mcp.ToolResultCapture.ToolCall;
@@ -43,8 +41,6 @@ public class ToolCallingSearchService {
 
     private final ChatClientProvider chatClientProvider;
     private final FlightSearchTool flightSearchTool;
-    private final AirportInfoTool airportInfoTool;
-    private final AirlineInfoTool airlineInfoTool;
 
     public SearchResponse search(String message, String model) {
         return search(message, model, new ExecutionTrace());
@@ -62,7 +58,9 @@ public class ToolCallingSearchService {
             String answer = chatClientProvider.get(model).prompt()
                     .system(systemPrompt())
                     .user(message)
-                    .tools(flightSearchTool, airportInfoTool, airlineInfoTool)
+                    // 항공편 검색 Tool 3개만 넘긴다. 공항·항공사 조회 Tool(AirportInfoTool, AirlineInfoTool)은
+                    // 검색 Tool이 한글 공항 이름을 직접 받으므로 필요 없고, 넘기면 LLM이 매번 읽어야 할 Tool 설명만 늘어난다
+                    .tools(flightSearchTool)
                     .call()
                     .content();
 
@@ -102,7 +100,7 @@ public class ToolCallingSearchService {
                 - 날짜는 "2026-06-25" 형식으로 Tool에 전달합니다.
                 - 시간은 24시간 형식("14:00")으로 전달합니다.
                 - 공항은 한글 이름 그대로 전달합니다. (예: "광주", "제주")
-                - 답변은 항공편 수와 가장 저렴한 항공편을 중심으로 3~4문장으로 요약합니다.
+                - 답변은 항공편 수와 가장 저렴한 항공편을 중심으로 2~3문장으로 짧게 요약합니다. 항공편 목록을 나열하지 마세요.
                 """.formatted(LocalDate.now(), LocalDate.now().getDayOfWeek()
                         .getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.KOREAN));
     }

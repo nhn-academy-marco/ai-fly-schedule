@@ -17,8 +17,7 @@ services:
 
       # Spring AI Gemini 설정
       - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY}
-      - SPRING_AI_GOOGLE_GENAI_CHAT_OPTIONS_MODEL=gemini-2.5-flash
-      - SPRING_AI_GOOGLE_GENAI_CHAT_OPTIONS_TEMPERATURE=0.0
+      - SPRING_AI_GOOGLE_GENAI_CHAT_OPTIONS_MODEL=gemini-3.5-flash-lite
 
       # 공공데이터 포털 API 설정
       - DATA_GO_KR_SERVICE_KEY=${DATA_GO_KR_SERVICE_KEY}

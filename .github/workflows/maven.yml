@@ -92,14 +92,16 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          GOOGLE_GENAI_API_KEY: ${{ secrets.GOOGLE_GENAI_API_KEY }}
         with:
           host: ${{ secrets.SSH_IP }}
           username: ${{ secrets.SSH_ID}}
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT }}
           script_stop: true
-          # 서비스 키를 원격 셸의 환경 변수로 넘긴다 (startup.sh가 실행하는 java 프로세스가 물려받음)
-          envs: DATA_GO_KR_SERVICE_KEY
+          # 키를 원격 셸의 환경 변수로 넘긴다 (startup.sh가 실행하는 java 프로세스가 물려받음)
+          # GOOGLE_GENAI_API_KEY는 선택이다. Secret이 없으면 빈 값으로 넘어오고, startup.sh가 지운다
+          envs: DATA_GO_KR_SERVICE_KEY,GOOGLE_GENAI_API_KEY
           script: |
             chmod +x ./fly-schedule/startup.sh
             ./fly-schedule/startup.sh

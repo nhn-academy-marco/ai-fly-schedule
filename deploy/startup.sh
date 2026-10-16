@@ -30,7 +30,15 @@ fi
 
 : "${DATA_GO_KR_SERVICE_KEY:?[startup] DATA_GO_KR_SERVICE_KEY가 없습니다. GitHub Secrets 또는 $APP_DIR/.env를 확인하세요.}"
 export DATA_GO_KR_SERVICE_KEY
-[ -n "${GOOGLE_GENAI_API_KEY:-}" ] && export GOOGLE_GENAI_API_KEY
+# Gemini 키는 선택이다. 빈 값이 넘어오면 지운다
+# (빈 문자열이 설정되면 application.yml의 기본값 not-set 대신 ""가 쓰여 Gemini 설정 오류로 기동에 실패한다)
+if [ -n "${GOOGLE_GENAI_API_KEY:-}" ]; then
+  export GOOGLE_GENAI_API_KEY
+  echo "[startup] Gemini API 키: 설정됨"
+else
+  unset GOOGLE_GENAI_API_KEY
+  echo "[startup] Gemini API 키: 없음 (Ollama만 사용)"
+fi
 
 # 포트 결정: SERVER_PORT → 원래 startup.sh(.orig)에 적힌 포트 → nginx의 proxy_pass 포트 → 10600
 # (nginx가 바라보는 포트와 다르면 502 Bad Gateway가 나므로, 서버 설정에서 포트를 찾는다)
